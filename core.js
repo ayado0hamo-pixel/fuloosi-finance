@@ -3,7 +3,7 @@
 (function (root) {
   const currencies = ['IQD', 'JOD', 'USD'];
   const directions = ['owed_to_me', 'i_owe'];
-  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
   const balanceAdjustmentCategory = 'تسوية رصيد';
 
   // The existing ledger represents every debit with kind 'expense'.
@@ -71,7 +71,13 @@
       if (!uuid.test(d.id) || debtIds.has(d.id) || !personIds.has(d.person_id) || !directions.includes(d.direction) || !currencies.includes(d.currency) || money(d.amount) <= 0 || !validDate(d.occurred_on)) throw Error('بيانات الدين غير صالحة');
       if (typeof d.note !== 'string' || d.note.length > 2000) throw Error('ملاحظة الدين غير صالحة');
       debtIds.add(d.id);
-      return { id: d.id, person_id: d.person_id, direction: d.direction, amount: Number(d.amount), currency: d.currency, note: d.note, occurred_on: d.occurred_on, created_at: d.created_at || new Date().toISOString() };
+      const row = { id: d.id, person_id: d.person_id, direction: d.direction, amount: Number(d.amount), currency: d.currency, note: d.note, occurred_on: d.occurred_on, created_at: d.created_at || new Date().toISOString() };
+      if (d.settlement_account_id != null) {
+        const account = accounts.find(a => a.id === d.settlement_account_id);
+        if (!account || account.currency !== d.currency) throw Error('حساب التسديد غير صالح');
+        row.settlement_account_id = account.id;
+      }
+      return row;
     });
 
     const transfers = (Array.isArray(x.transfers) ? x.transfers : []).map(t => {
@@ -95,14 +101,16 @@
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
   }
 
-  function balance(account, entries, transfers = []) {
+  function balance(account, entries, transfers = [], debts = []) {
     const entryEffect = entries.filter(e => e.account_id === account.id).reduce((sum, entry) => sum + (entry.kind === 'expense' ? -1 : 1) * money(entry.amount), 0);
     const transferEffect = transfers.reduce((sum, transfer) => {
       if (transfer.from_account_id === account.id) sum -= money(transfer.from_amount);
       if (transfer.to_account_id === account.id) sum += money(transfer.to_amount);
       return sum;
     }, 0);
-    return (money(account.opening_balance) + entryEffect + transferEffect) / 1000;
+    const settlementEffect = debts.filter(d => d.settlement_account_id === account.id)
+      .reduce((sum, debt) => sum + (debt.direction === 'i_owe' ? 1 : -1) * money(debt.amount), 0);
+    return (money(account.opening_balance) + entryEffect + transferEffect + settlementEffect) / 1000;
   }
 
   function toJod(amount, currency, settings) {

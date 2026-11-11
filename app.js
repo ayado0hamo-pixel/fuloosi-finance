@@ -52,6 +52,7 @@ let personRevision = null;
 let debtEditId = null;
 let debtRevision = null;
 let debtDraft = null;
+let settlementDraft = null;
 let settingsDirty = false;
 let settingsRevision = null;
 
@@ -97,7 +98,7 @@ async function action(task) {
 }
 
 function bal(account) {
-  return FuloosiCore.balance(account, state.entries, state.transfers);
+  return FuloosiCore.balance(account, state.entries, state.transfers, state.debt_entries);
 }
 
 function render() {
@@ -114,7 +115,14 @@ function render() {
   `).join('');
 
   const settings = state.settings;
-  document.getElementById('total').textContent = fmt(sums.USD + sums.IQD / num(settings.iqd_per_usd) + sums.JOD / num(settings.jod_per_usd), 'USD') + ' USD';
+  const toUsd = amounts => amounts.USD + amounts.IQD / num(settings.iqd_per_usd) + amounts.JOD / num(settings.jod_per_usd);
+  const walletTotal = toUsd(sums);
+  const netTotal = walletTotal + toUsd(FuloosiCore.debtNet(null, state.debt_entries));
+  for (const [id, amount] of [['total', walletTotal], ['totalAfterDebts', netTotal]]) {
+    const element = document.getElementById(id);
+    element.textContent = fmt(amount, 'USD') + ' USD';
+    element.classList.toggle('negative', amount < 0);
+  }
   document.getElementById('ratesText').textContent = `1 USD = ${settings.iqd_per_usd} IQD = ${settings.jod_per_usd} JOD`;
   if (!settingsDirty) {
     document.getElementById('iqdRate').value = settings.iqd_per_usd;
@@ -176,7 +184,18 @@ function renderCategories() {
 function renderEntries() {
   const query = document.getElementById('search').value.trim().toLowerCase();
   const currency = document.getElementById('filterCurrency').value;
-  const rows = [...state.entries]
+  const settlements = state.debt_entries.filter(debt => debt.settlement_account_id).map(debt => {
+    const person = state.debt_people.find(row => row.id === debt.person_id);
+    const received = debt.direction === 'i_owe';
+    return {
+      ...debt,
+      account_id: debt.settlement_account_id,
+      kind: received ? 'income' : 'expense',
+      category: received ? 'استلام تسديد دين' : 'دفع تسديد دين',
+      note: [person?.name, debt.note].filter(Boolean).join(' · ')
+    };
+  });
+  const rows = [...state.entries, ...settlements]
     .sort((a, b) => String(b.occurred_on).localeCompare(String(a.occurred_on)) || String(b.created_at || '').localeCompare(String(a.created_at || '')))
     .filter(entry => {
       const account = state.accounts.find(row => row.id === entry.account_id);
@@ -190,7 +209,9 @@ function renderEntries() {
         <div><b>${escapeHtml(entry.category)}</b><br><small>${escapeHtml(account.name)} · ${escapeHtml(entry.occurred_on)} · ${escapeHtml(entry.note || '')}</small></div>
         <div style="text-align:left">
           <strong class="amount ${entry.kind === 'expense' ? 'negative' : 'good'}">${entry.kind === 'expense' ? '−' : '+'}${fmt(entry.amount, account.currency)} ${account.currency}</strong>
-          <div class="controls"><button onclick="editEntry('${entry.id}')">تعديل</button><button class="danger" onclick="deleteEntry('${entry.id}')">حذف</button></div>
+          <div class="controls">${entry.settlement_account_id
+            ? `<button class="danger" onclick="deleteDebtEntry('${entry.id}')">حذف التسديد</button>`
+            : `<button onclick="editEntry('${entry.id}')">تعديل</button><button class="danger" onclick="deleteEntry('${entry.id}')">حذف</button>`}</div>
         </div>
       </div>
     `;
@@ -277,7 +298,10 @@ function renderDebts() {
     return `
       <div class="item">
         <div><b>${escapeHtml(person.name)}</b><div class="debt-chips">${CURRENCIES.filter(currency => net[currency]).map(currency => `<span class="chip ${net[currency] < 0 ? 'negative' : 'good'}">${net[currency] >= 0 ? 'إلك' : 'عليك'} ${fmt(Math.abs(net[currency]), currency)} ${currency}</span>`).join('') || '<span class="chip">ماكو دين مفتوح</span>'}</div></div>
-        <div class="controls"><button onclick="showPersonForm('${person.id}')">تعديل الاسم</button><button class="danger" onclick="deletePerson('${person.id}')">حذف</button></div>
+        <div class="controls">
+          ${CURRENCIES.filter(currency => net[currency]).map(currency => `<button class="primary" onclick="showSettlementForm('${person.id}', '${currency}')">تسديد ${currency}</button>`).join('')}
+          <button onclick="showPersonForm('${person.id}')">تعديل الاسم</button><button class="danger" onclick="deletePerson('${person.id}')">حذف</button>
+        </div>
       </div>
     `;
   }).join('') : '<p class="muted">أضف أسماء الشباب حتى تسجل الديون.</p>';
@@ -290,11 +314,18 @@ function renderDebts() {
   const rows = [...state.debt_entries].sort((a, b) => String(b.occurred_on).localeCompare(String(a.occurred_on)) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
   document.getElementById('debtList').innerHTML = rows.length ? '<h3>الحركات</h3>' + rows.map(entry => {
     const person = state.debt_people.find(row => row.id === entry.person_id);
+    const account = state.accounts.find(row => row.id === entry.settlement_account_id);
+    const settled = Boolean(entry.settlement_account_id);
+    const owedToMe = entry.direction === 'owed_to_me';
+    const title = settled
+      ? (owedToMe ? 'دفعت تسديد دين' : 'استلمت تسديد دين')
+      : (owedToMe ? 'هو مدين إلي' : 'أنا مدين إله');
+    const details = [title, account?.name, entry.occurred_on, entry.note].filter(Boolean).map(escapeHtml).join(' · ');
     return `
       <div class="item">
-        <div><b>${escapeHtml(person?.name || 'اسم محذوف')}</b><br><small>${entry.direction === 'owed_to_me' ? 'هو مدين إلي' : 'أنا مدين إله'} · ${escapeHtml(entry.occurred_on)} · ${escapeHtml(entry.note || '')}</small></div>
-        <div style="text-align:left"><strong class="amount ${entry.direction === 'owed_to_me' ? 'good' : 'negative'}">${entry.direction === 'owed_to_me' ? '+' : '−'}${fmt(entry.amount, entry.currency)} ${entry.currency}</strong>
-          <div class="controls"><button onclick="editDebtEntry('${entry.id}')">تعديل</button><button class="danger" onclick="deleteDebtEntry('${entry.id}')">حذف</button></div>
+        <div><b>${escapeHtml(person?.name || 'اسم محذوف')}</b><br><small>${details}</small></div>
+        <div style="text-align:left"><strong class="amount ${owedToMe ? 'good' : 'negative'}">${owedToMe ? '+' : '−'}${fmt(entry.amount, entry.currency)} ${entry.currency}</strong>
+          <div class="controls">${settled ? '' : `<button onclick="editDebtEntry('${entry.id}')">تعديل</button>`}<button class="danger" onclick="deleteDebtEntry('${entry.id}')">${settled ? 'حذف التسديد' : 'حذف'}</button></div>
         </div>
       </div>
     `;
@@ -358,7 +389,8 @@ function showAccountForm(id) {
   accountEditId = id || null;
   const account = state.accounts.find(row => row.id === id);
   const hasActivity = Boolean(account && (state.entries.some(entry => entry.account_id === id)
-    || state.transfers.some(transfer => transfer.from_account_id === id || transfer.to_account_id === id)));
+    || state.transfers.some(transfer => transfer.from_account_id === id || transfer.to_account_id === id)
+    || state.debt_entries.some(debt => debt.settlement_account_id === id)));
   accountRevision = account?.revision ?? null;
   document.getElementById('accountForm').classList.remove('hide');
   document.getElementById('accountFormTitle').textContent = account ? 'تعديل حساب' : 'إضافة حساب';
@@ -453,6 +485,7 @@ async function saveAccount() {
 }
 
 async function deleteAccount(id) {
+  if (state.debt_entries.some(debt => debt.settlement_account_id === id)) throw Error('الحساب مرتبط بتسديد دين. احذف التسديد أولاً.');
   if (state.entries.some(entry => entry.account_id === id)) throw Error('الحساب يحتوي عمليات. احذف العمليات المرتبطة أولاً.');
   if (state.transfers.some(transfer => transfer.from_account_id === id || transfer.to_account_id === id)) throw Error('الحساب يحتوي تحويلات. احذف التحويلات المرتبطة أولاً.');
   if (!confirm('حذف الحساب نهائياً؟')) return;
@@ -663,7 +696,7 @@ async function saveDebtEntry() {
 
 function editDebtEntry(id) {
   const entry = state.debt_entries.find(row => row.id === id);
-  if (!entry) return;
+  if (!entry || entry.settlement_account_id) return;
   debtEditId = id;
   debtRevision = entry.revision ?? null;
   debtDraft = structuredClone(entry);
@@ -689,10 +722,71 @@ function cancelDebtEdit() {
   document.getElementById('debtDate').value = today();
 }
 
+function showSettlementForm(personId, currency) {
+  const person = state.debt_people.find(row => row.id === personId);
+  const net = FuloosiCore.debtNet(personId, state.debt_entries)[currency];
+  if (!person || !net) return;
+  const accounts = state.accounts.filter(account => account.currency === currency);
+  if (!accounts.length) {
+    alert(`أضف حساب بعملة ${currency} حتى تسجّل التسديد.`);
+    return;
+  }
+  const received = net > 0;
+  settlementDraft = { id: uid(), personId, currency, direction: received ? 'i_owe' : 'owed_to_me' };
+  document.getElementById('settlementTitle').textContent = received ? 'استلام تسديد من ' + person.name : 'دفع تسديد إلى ' + person.name;
+  document.getElementById('settlementDetails').textContent = `المبلغ المتبقي: ${fmt(Math.abs(net), currency)} ${currency}`;
+  document.getElementById('settlementAccountLabel').textContent = received ? 'أضف المبلغ إلى حساب' : 'اخصم المبلغ من حساب';
+  const accountSelect = document.getElementById('settlementAccount');
+  accountSelect.innerHTML = accounts.map(account => `<option value="${account.id}">${escapeHtml(account.name)}</option>`).join('');
+  accountSelect.value = accounts[0].id;
+  document.getElementById('settlementAmount').value = Math.min(Math.abs(net), 1e12);
+  document.getElementById('settlementDate').value = today();
+  const form = document.getElementById('settlementForm');
+  form.classList.remove('hide');
+  form.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+}
+
+function hideSettlementForm() {
+  settlementDraft = null;
+  document.getElementById('settlementForm').classList.add('hide');
+}
+
+async function saveDebtSettlement() {
+  const draft = settlementDraft;
+  if (!draft) return;
+  const accountId = document.getElementById('settlementAccount').value;
+  const account = state.accounts.find(row => row.id === accountId);
+  const amount = FuloosiCore.money(document.getElementById('settlementAmount').value) / 1000;
+  const occurredOn = document.getElementById('settlementDate').value;
+  if (!account || account.currency !== draft.currency) throw Error('اختار حساب بنفس عملة الدين.');
+  if (amount <= 0 || !occurredOn) throw Error('تأكد من مبلغ التسديد والتاريخ.');
+  if (cloud) {
+    requireCloud();
+    if (loading) await loading;
+    if (draft !== settlementDraft) return;
+    requireCloud();
+    const { error } = await client.rpc('fuloosi_settle_debt', {
+      p_id: draft.id, p_person_id: draft.personId, p_account_id: accountId,
+      p_currency: draft.currency, p_direction: draft.direction, p_amount: amount, p_occurred_on: occurredOn
+    });
+    if (error) throw error;
+  } else {
+    const net = FuloosiCore.debtNet(draft.personId, state.debt_entries)[draft.currency];
+    if ((draft.direction === 'i_owe' ? net : -net) < amount) throw Error('مبلغ التسديد أكبر من الرصيد المتبقي أو اتجاه الدين تغيّر.');
+    await insertRow('debt_entries', {
+      id: draft.id, person_id: draft.personId, settlement_account_id: accountId, direction: draft.direction,
+      amount, currency: draft.currency, occurred_on: occurredOn, note: '', created_at: new Date().toISOString()
+    });
+  }
+  if (draft !== settlementDraft) return;
+  hideSettlementForm();
+  await reload({ fresh: true });
+}
+
 async function deleteDebtEntry(id) {
-  if (!confirm('تحذف حركة الدين؟')) return;
   const entry = state.debt_entries.find(row => row.id === id);
   if (!entry) return;
+  if (!confirm(entry.settlement_account_id ? 'تحذف التسديد وترجع المبلغ إلى رصيد الدين والحساب قبل الدفعة؟' : 'تحذف حركة الدين؟')) return;
   await removeRow('debt_entries', id, entry.revision);
   if (debtEditId === id) cancelDebtEdit();
   await reload({ fresh: true });
@@ -767,6 +861,7 @@ function clearForms() {
   hideBalanceForm();
   hideBudgetForm();
   hidePersonForm();
+  hideSettlementForm();
   cancelDebtEdit();
   ['amount', 'note', 'password', 'aname', 'abalance', 'personName', 'budgetCategory', 'budgetLimit'].forEach(id => { document.getElementById(id).value = ''; });
 }
@@ -923,7 +1018,7 @@ async function migrateLocal() {
 
 const protectedActions = {
   saveAccount, saveAccountBalance, deleteAccount, saveEntry, deleteEntry, saveBudget, deleteBudget,
-  saveTransfer, deleteTransfer, savePerson, deletePerson, saveDebtEntry, deleteDebtEntry, saveSettings,
+  saveTransfer, deleteTransfer, savePerson, deletePerson, saveDebtEntry, saveDebtSettlement, deleteDebtEntry, saveSettings,
   connectCloud, signUp, signIn, signOut, resetPassword, updatePassword, syncNow, migrateLocal
 };
 for (const [name, original] of Object.entries(protectedActions)) {
@@ -943,6 +1038,8 @@ Object.assign(window, {
   hideBudgetForm,
   showPersonForm,
   hidePersonForm,
+  showSettlementForm,
+  hideSettlementForm,
   editDebtEntry,
   cancelDebtEdit,
   suggestTransferAmount,

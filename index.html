@@ -50,7 +50,11 @@
   <section>
     <h2>💰 محفظتي</h2>
     <div id="tiles" class="grid wallet-grid"></div>
-    <div class="tile total" style="margin-top:12px"><small>المجموع التقريبي بالدولار (بعد احتساب الأرصدة السالبة)</small><strong id="total">—</strong><small id="ratesText"></small></div>
+    <div class="grid two" style="margin-top:12px">
+      <div class="tile total"><small>رصيد المحفظة</small><strong id="total">—</strong></div>
+      <div class="tile total"><small>الصافي بعد الديون</small><strong id="totalAfterDebts">—</strong></div>
+    </div>
+    <small id="ratesText"></small>
   </section>
 
   <p><button onclick="syncNow()">🔄 مزامنة الآن</button> <small id="syncInfo" role="status" aria-live="polite"></small></p>
@@ -145,6 +149,16 @@
       <p><button class="primary" onclick="savePerson()">حفظ الاسم</button> <button onclick="hidePersonForm()">إلغاء</button></p>
     </div>
     <div id="personList"></div>
+    <div id="settlementForm" class="hide">
+      <h3 id="settlementTitle">تسديد دين</h3>
+      <p class="muted" id="settlementDetails"></p>
+      <div class="fields">
+        <div><label for="settlementAccount" id="settlementAccountLabel">الحساب</label><select id="settlementAccount"></select></div>
+        <div><label for="settlementAmount">مبلغ التسديد</label><input id="settlementAmount" type="number" min="0.001" step="0.001" inputmode="decimal"></div>
+        <div><label for="settlementDate">تاريخ التسديد</label><input id="settlementDate" type="date"></div>
+      </div>
+      <p><button class="primary" onclick="saveDebtSettlement()">حفظ التسديد</button> <button onclick="hideSettlementForm()">إلغاء</button></p>
+    </div>
     <hr>
     <h3 id="debtFormTitle">إضافة دين</h3>
     <div class="fields">
@@ -200,7 +214,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script>
   <script src="config.js?v=20261111-3" defer></script>
-  <script src="core.js?v=20261111-5" defer></script>
-  <script src="app.js?v=20261111-5" defer></script>
+  <script src="core.js?v=20261111-6" defer></script>
+  <script src="app.js?v=20261111-6" defer></script>
 </body>
 </html>

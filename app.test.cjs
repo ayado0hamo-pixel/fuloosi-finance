@@ -202,3 +202,95 @@ test('debt forms add both directions, edit, delete, and reuse a person name', as
   assert.notEqual(d.run('state.debt_people[1].id'), person.id);
   assert.equal(device(d.storage).run('state.debt_entries.length'), 0);
 });
+
+test('partial receipt and full payment update cash and debt together', async () => {
+  const d = device();
+  const accountId = '11111111-1111-4111-8111-111111111111';
+  const personId = '33333333-3333-4333-8333-333333333333';
+  d.context.fixture = {
+    accounts: [
+      { id: accountId, name: 'Cash', currency: 'JOD', opening_balance: 50 },
+      { id: '55555555-5555-4555-8555-555555555555', name: 'Dollars', currency: 'USD', opening_balance: 5 }
+    ],
+    entries: [],
+    debt_people: [{ id: personId, name: 'Ali' }],
+    debt_entries: [
+      { id: '44444444-4444-0444-4444-444444444444', person_id: personId, currency: 'JOD', direction: 'owed_to_me', amount: 12, note: '', occurred_on: '2026-11-11' },
+      { id: '66666666-6666-4666-8666-666666666666', person_id: personId, currency: 'USD', direction: 'i_owe', amount: 2, note: '', occurred_on: '2026-11-11' }
+    ]
+  };
+  d.run('localMutation(next => Object.assign(next, fixture)); render()');
+  const netTotal = d.nodes.get('totalAfterDebts').textContent;
+  const initialCash = d.nodes.get('total').textContent;
+  assert.notEqual(netTotal, initialCash);
+  assert.match(d.nodes.get('personList').innerHTML, /تسديد JOD/);
+  d.run("showSettlementForm(fixture.debt_people[0].id, 'JOD')");
+  assert.equal(d.nodes.get('settlementAmount').value, 12);
+  assert.doesNotMatch(d.nodes.get('settlementAccount').innerHTML, /Dollars/);
+
+  d.nodes.get('settlementAmount').value = '12.001';
+  await d.run('saveDebtSettlement()');
+  assert.match(d.nodes.get('message').textContent, /أكبر من الرصيد/);
+  d.nodes.get('settlementAccount').value = d.context.fixture.accounts[1].id;
+  await d.run('saveDebtSettlement()');
+  assert.match(d.nodes.get('message').textContent, /بنفس عملة الدين/);
+  d.nodes.get('settlementAccount').value = accountId;
+  d.nodes.get('settlementAmount').value = '4.25';
+  await d.run('saveDebtSettlement()');
+  assert.equal(d.run('bal(state.accounts[0])'), 54.25);
+  assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).JOD'), 7.75);
+  assert.notEqual(d.nodes.get('total').textContent, initialCash);
+  assert.equal(d.nodes.get('totalAfterDebts').textContent, netTotal);
+  assert.match(d.nodes.get('entryList').innerHTML, /استلام تسديد دين/);
+
+  d.run("showSettlementForm(fixture.debt_people[0].id, 'USD')");
+  await d.run('saveDebtSettlement()');
+  assert.equal(d.run('bal(state.accounts[1])'), 3);
+  assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).USD'), 0);
+  assert.doesNotMatch(d.nodes.get('personList').innerHTML, /تسديد USD/);
+  assert.equal(d.nodes.get('totalAfterDebts').textContent, netTotal);
+  assert.equal(d.run('FuloosiCore.monthStats(state, thisMonth()).total_spent_jod'), 0);
+
+  const restarted = device(d.storage);
+  assert.equal(restarted.run('bal(state.accounts[1])'), 3);
+  await restarted.run('deleteDebtEntry(state.debt_entries[3].id)');
+  assert.equal(restarted.run('bal(state.accounts[1])'), 5);
+  assert.equal(restarted.run('FuloosiCore.debtNet(null, state.debt_entries).USD'), -2);
+  assert.equal(restarted.nodes.get('totalAfterDebts').textContent, netTotal);
+  await restarted.run('deleteAccount(state.accounts[0].id)');
+  assert.match(restarted.nodes.get('message').textContent, /مرتبط بتسديد/);
+});
+
+test('cloud settlement retries use the same ID and refresh the wallet snapshot', async () => {
+  const d = device();
+  const date = '2026-11-11';
+  const snapshot = {
+    accounts: [{ id: 'wallet', name: 'Cash', currency: 'JOD', opening_balance: 10 }],
+    debt_people: [{ id: 'person', name: 'Ali' }],
+    debt_entries: [{ id: 'debt', person_id: 'person', currency: 'JOD', direction: 'owed_to_me', amount: 5, occurred_on: date }]
+  };
+  const calls = [];
+  d.context.mockClient = {
+    async rpc(name, params) {
+      if (name === 'fuloosi_snapshot') return { data: structuredClone(snapshot), error: null };
+      assert.equal(name, 'fuloosi_settle_debt');
+      calls.push(params);
+      if (calls.length === 1) return { error: Error('response lost') };
+      snapshot.debt_entries.push({
+        id: params.p_id, person_id: params.p_person_id, settlement_account_id: params.p_account_id,
+        currency: params.p_currency, direction: params.p_direction, amount: params.p_amount, occurred_on: params.p_occurred_on
+      });
+      return { error: null };
+    }
+  };
+  await d.run("client=mockClient;activate({user:{id:'user-a',email:'a@example.com'}})");
+  d.run("showSettlementForm('person', 'JOD')");
+  d.nodes.get('settlementDate').value = date;
+  await d.run('saveDebtSettlement()');
+  assert.match(d.nodes.get('message').textContent, /response lost/);
+  await d.run('saveDebtSettlement()');
+  assert.deepEqual(calls[0], calls[1]);
+  assert.equal(d.run('bal(state.accounts[0])'), 15);
+  assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).JOD'), 0);
+  assert.equal(d.run('settlementDraft'), null);
+});
