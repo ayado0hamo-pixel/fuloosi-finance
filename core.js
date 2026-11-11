@@ -135,7 +135,11 @@
 
   function debtNet(personId, entries) {
     const result = Object.fromEntries(currencies.map(c => [c, 0]));
-    for (const entry of entries.filter(e => e.person_id === personId)) result[entry.currency] += (entry.direction === 'owed_to_me' ? 1 : -1) * Number(entry.amount);
+    for (const entry of entries) {
+      if (personId !== null && entry.person_id !== personId) continue;
+      result[entry.currency] += (entry.direction === 'owed_to_me' ? 1 : -1) * money(entry.amount);
+    }
+    for (const currency of currencies) result[currency] /= 1000;
     return result;
   }
 

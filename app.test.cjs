@@ -86,3 +86,119 @@ test('tapping a balance reconciles increases and decreases without counting them
   assert.match(d.nodes.get('entryList').innerHTML, /تسوية رصيد/);
   assert.equal(device(d.storage).run('bal(state.accounts[0])'), -5.125);
 });
+
+test('a deleted cloud account name can be reused despite a stale snapshot', async () => {
+  const d = device();
+  const old = { id: '11111111-1111-4111-8111-111111111111', name: 'Test Cash', currency: 'USD', opening_balance: 20, revision: 1 };
+  let accounts = [old];
+  let staleReload;
+  let releaseStale;
+  let pauseSnapshot = false;
+  let alert;
+  d.context.alert = text => { alert = text; };
+  d.context.mockClient = {
+    async rpc() {
+      const response = { data: { accounts: structuredClone(accounts) }, error: null };
+      if (!pauseSnapshot) return response;
+      pauseSnapshot = false;
+      return new Promise(resolve => { releaseStale = () => resolve(response); });
+    },
+    from(table) {
+      assert.equal(table, 'accounts');
+      return {
+        delete() { return this; },
+        eq() { return this; },
+        async select() {
+          pauseSnapshot = true;
+          staleReload = d.run('reload()');
+          accounts = [];
+          return { data: [{ id: old.id }], error: null };
+        },
+        insert(account) {
+          if (accounts.some(row => row.name === account.name && row.currency === account.currency)) {
+            return { select: async () => ({ error: { code: '23505' } }) };
+          }
+          accounts.push({ ...account, revision: 1 });
+          return { select: async () => ({ data: [account], error: null }) };
+        }
+      };
+    }
+  };
+  await d.run("client = mockClient; activate({ user: { id: 'user', email: 'test@example.com' } })");
+  await d.run('deleteAccount(state.accounts[0].id)');
+  assert.equal(d.run('state.accounts.length'), 0);
+  releaseStale();
+  await staleReload;
+  assert.equal(d.run('state.accounts.length'), 0);
+
+  const addCash = async amount => {
+    d.run('showAccountForm()');
+    d.nodes.get('aname').value = old.name;
+    d.nodes.get('acurrency').value = 'USD';
+    d.nodes.get('abalance').value = String(amount);
+    await d.run('saveAccount()');
+  };
+  await addCash(35);
+  assert.equal(d.run('state.accounts[0].opening_balance'), 35);
+  assert.notEqual(d.run('state.accounts[0].id'), old.id);
+  await addCash(50);
+  assert.match(alert, /هذا الاسم موجود.*USD/);
+  assert.equal(accounts.length, 1);
+
+  accounts = []; // A different device deleted the account while this form was open.
+  await d.run('saveAccount()');
+  assert.equal(d.run('state.accounts[0].opening_balance'), 50);
+});
+
+test('debt forms add both directions, edit, delete, and reuse a person name', async () => {
+  const d = device();
+  let alert;
+  d.context.alert = text => { alert = text; };
+  const addPerson = async name => {
+    d.run('showPersonForm()');
+    d.nodes.get('personName').value = name;
+    await d.run('savePerson()');
+  };
+  const addDebt = async (direction, amount, currency) => {
+    d.context.document.getElementById('debtDirection').value = direction;
+    d.context.document.getElementById('debtAmount').value = amount;
+    d.context.document.getElementById('debtCurrency').value = currency;
+    await d.run('saveDebtEntry()');
+  };
+  await addPerson('Friend A');
+  await addPerson('Friend B');
+  const person = d.run('state.debt_people[1]');
+  assert.equal(d.nodes.get('debtPerson').value, person.id);
+  await addDebt('owed_to_me', '0.1', 'JOD');
+  await addDebt('owed_to_me', '0.2', 'JOD');
+  await addDebt('i_owe', '0.3', 'JOD');
+  await addDebt('i_owe', '12.125', 'USD');
+  assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).JOD'), 0);
+  assert.match(d.nodes.get('personList').innerHTML, /عليك 12\.125 USD/);
+  assert.match(d.nodes.get('debtList').innerHTML, /هو مدين إلي/);
+  assert.match(d.nodes.get('debtList').innerHTML, /أنا مدين إله/);
+
+  d.run('showPersonForm(state.debt_people[1].id)');
+  d.nodes.get('personName').value = 'Friend Renamed';
+  await d.run('savePerson()');
+  d.run('editDebtEntry(state.debt_entries[3].id)');
+  d.nodes.get('debtDirection').value = 'owed_to_me';
+  d.nodes.get('debtAmount').value = '10.50';
+  d.nodes.get('debtNote').value = 'Updated note';
+  await d.run('saveDebtEntry()');
+  assert.match(d.nodes.get('personList').innerHTML, /إلك 10\.50 USD/);
+  assert.match(d.nodes.get('debtList').innerHTML, /Updated note/);
+  assert.equal(device(d.storage).run('state.debt_people[1].name'), 'Friend Renamed');
+
+  await d.run('deletePerson(state.debt_people[1].id)');
+  assert.match(alert, /عنده حركات ديون/);
+  await d.run('deleteDebtEntry(state.debt_entries[2].id)');
+  assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).JOD'), 0.3);
+  for (const id of d.run('state.debt_entries.map(entry => entry.id)')) {
+    await d.run(`deleteDebtEntry(${JSON.stringify(id)})`);
+  }
+  await d.run('deletePerson(state.debt_people[1].id)');
+  await addPerson('Friend Renamed');
+  assert.notEqual(d.run('state.debt_people[1].id'), person.id);
+  assert.equal(device(d.storage).run('state.debt_entries.length'), 0);
+});

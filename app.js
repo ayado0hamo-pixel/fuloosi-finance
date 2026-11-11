@@ -267,10 +267,9 @@ function renderStats() {
 }
 
 function renderDebts() {
-  const totals = Object.fromEntries(CURRENCIES.map(currency => [currency, 0]));
-  for (const entry of state.debt_entries) totals[entry.currency] += (entry.direction === 'owed_to_me' ? 1 : -1) * num(entry.amount);
+  const totals = FuloosiCore.debtNet(null, state.debt_entries);
   document.getElementById('debtSummary').innerHTML = CURRENCIES.map(currency => `
-    <div class="tile"><small>صافي الديون ${currency}</small><strong class="${totals[currency] < 0 ? 'negative' : 'good'}">${fmt(totals[currency], currency)}</strong><small>${totals[currency] >= 0 ? 'إلك' : 'عليك'}</small></div>
+    <div class="tile"><small>صافي الديون ${currency}</small><strong class="${totals[currency] < 0 ? 'negative' : 'good'}">${fmt(totals[currency], currency)}</strong>${totals[currency] ? `<small>${totals[currency] > 0 ? 'إلك' : 'عليك'}</small>` : ''}</div>
   `).join('');
 
   document.getElementById('personList').innerHTML = state.debt_people.length ? state.debt_people.map(person => {
@@ -431,7 +430,7 @@ async function saveAccountBalance() {
     });
   }
   hideBalanceForm();
-  if (difference) await reload();
+  if (difference) await reload({ fresh: true });
 }
 
 async function saveAccount() {
@@ -439,12 +438,18 @@ async function saveAccount() {
   const currency = document.getElementById('acurrency').value;
   const opening_balance = Number(document.getElementById('abalance').value);
   if (!name || !Number.isFinite(opening_balance) || Math.abs(opening_balance) > 1e12) throw Error('أدخل اسم ورصيد صحيح');
-  if (state.accounts.some(account => account.name === name && account.currency === currency && account.id !== accountEditId)) throw Error('هذا الاسم موجود بنفس العملة');
+  const duplicateMessage = `هذا الاسم موجود بحساب عملته ${currency}`;
+  if (!cloud && state.accounts.some(account => account.name === name && account.currency === currency && account.id !== accountEditId)) throw Error(duplicateMessage);
   const object = { id: accountEditId || uid(), name, currency, opening_balance };
-  if (accountEditId) await updateRow('accounts', accountEditId, object, accountRevision);
-  else await insertRow('accounts', object);
-  await reload();
+  try {
+    if (accountEditId) await updateRow('accounts', accountEditId, object, accountRevision);
+    else await insertRow('accounts', object);
+  } catch (error) {
+    if (error.code === '23505') throw Error(duplicateMessage);
+    throw error;
+  }
   hideAccountForm();
+  await reload({ fresh: true });
 }
 
 async function deleteAccount(id) {
@@ -452,8 +457,9 @@ async function deleteAccount(id) {
   if (state.transfers.some(transfer => transfer.from_account_id === id || transfer.to_account_id === id)) throw Error('الحساب يحتوي تحويلات. احذف التحويلات المرتبطة أولاً.');
   if (!confirm('حذف الحساب نهائياً؟')) return;
   const account = state.accounts.find(row => row.id === id);
+  if (!account) return;
   await removeRow('accounts', id, account.revision);
-  await reload();
+  await reload({ fresh: true });
 }
 
 async function saveEntry() {
@@ -597,9 +603,11 @@ function showPersonForm(id) {
   personEditId = id || null;
   const person = state.debt_people.find(row => row.id === id);
   personRevision = person?.revision ?? null;
-  document.getElementById('personForm').classList.remove('hide');
+  const form = document.getElementById('personForm');
+  form.classList.remove('hide');
   document.getElementById('personFormTitle').textContent = person ? 'تعديل الاسم' : 'إضافة شخص';
   document.getElementById('personName').value = person?.name || '';
+  form.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
 }
 
 function hidePersonForm() {
@@ -611,38 +619,46 @@ function hidePersonForm() {
 async function savePerson() {
   const name = document.getElementById('personName').value.trim();
   if (!name || name.length > 100) throw Error('أدخل اسم صحيح');
-  if (state.debt_people.some(person => person.name === name && person.id !== personEditId)) throw Error('هذا الاسم موجود');
-  const object = { id: personEditId || uid(), name, created_at: personEditId ? state.debt_people.find(row => row.id === personEditId).created_at : new Date().toISOString() };
-  if (personEditId) await updateRow('debt_people', personEditId, object, personRevision);
-  else await insertRow('debt_people', object);
+  if (!cloud && state.debt_people.some(person => person.name === name && person.id !== personEditId)) throw Error('هذا الاسم موجود');
+  const existing = state.debt_people.find(person => person.id === personEditId);
+  if (personEditId && !existing) throw Error('انحذف هذا الاسم. حدّث قائمة الأسماء.');
+  const object = { id: personEditId || uid(), name, created_at: existing?.created_at ?? new Date().toISOString() };
+  try {
+    if (personEditId) await updateRow('debt_people', personEditId, object, personRevision);
+    else await insertRow('debt_people', object);
+  } catch (error) {
+    if (error.code === '23505') throw Error('هذا الاسم موجود');
+    throw error;
+  }
   hidePersonForm();
-  await reload();
-  tab('debts');
+  await reload({ fresh: true });
+  document.getElementById('debtPerson').value = object.id;
 }
 
 async function deletePerson(id) {
   if (state.debt_entries.some(entry => entry.person_id === id)) throw Error('هذا الشخص عنده حركات ديون. احذف حركاته أولاً.');
   if (!confirm('تحذف الاسم من سجل الديون؟')) return;
   const person = state.debt_people.find(row => row.id === id);
+  if (!person) return;
   await removeRow('debt_people', id, person.revision);
-  await reload();
+  if (personEditId === id) hidePersonForm();
+  await reload({ fresh: true });
 }
 
 async function saveDebtEntry() {
   const person_id = document.getElementById('debtPerson').value;
   const direction = document.getElementById('debtDirection').value;
-  const amount = Number(document.getElementById('debtAmount').value);
+  const amount = FuloosiCore.money(document.getElementById('debtAmount').value) / 1000;
   const currency = document.getElementById('debtCurrency').value;
   const occurred_on = document.getElementById('debtDate').value;
   const note = document.getElementById('debtNote').value.trim();
   if (!state.debt_people.some(person => person.id === person_id)) throw Error('أضف اسم الشخص أولاً');
-  if (!Number.isFinite(amount) || amount <= 0 || !occurred_on) throw Error('تأكد من المبلغ والتاريخ');
+  if (amount <= 0 || !occurred_on) throw Error('تأكد من المبلغ والتاريخ');
   const object = { id: debtEditId || uid(), person_id, direction, amount, currency, occurred_on, note, created_at: debtEditId ? debtDraft.created_at : new Date().toISOString() };
   if (debtEditId) await updateRow('debt_entries', debtEditId, object, debtRevision);
   else await insertRow('debt_entries', object);
   cancelDebtEdit();
-  await reload();
-  tab('debts');
+  await reload({ fresh: true });
 }
 
 function editDebtEntry(id) {
@@ -659,6 +675,7 @@ function editDebtEntry(id) {
   document.getElementById('debtCurrency').value = entry.currency;
   document.getElementById('debtDate').value = entry.occurred_on;
   document.getElementById('debtNote').value = entry.note;
+  document.getElementById('debtFormTitle').scrollIntoView?.({ behavior: 'smooth', block: 'start' });
 }
 
 function cancelDebtEdit() {
@@ -675,8 +692,10 @@ function cancelDebtEdit() {
 async function deleteDebtEntry(id) {
   if (!confirm('تحذف حركة الدين؟')) return;
   const entry = state.debt_entries.find(row => row.id === id);
+  if (!entry) return;
   await removeRow('debt_entries', id, entry.revision);
-  await reload();
+  if (debtEditId === id) cancelDebtEdit();
+  await reload({ fresh: true });
 }
 
 async function saveSettings() {
@@ -858,18 +877,18 @@ async function updatePassword() {
   msg('تم تغيير كلمة المرور');
 }
 
-async function reload() {
+async function reload({ fresh = false } = {}) {
   if (!cloud) {
     state = needsLogin() ? initial() : local;
     render();
     return;
   }
-  if (loading) return loading;
+  if (loading && !fresh) return loading;
   const version = epoch;
   const who = currentUser.id;
   const task = (async () => {
     const { data, error } = await client.rpc('fuloosi_snapshot');
-    if (version !== epoch || who !== currentUser?.id) return;
+    if (loading !== task || version !== epoch || who !== currentUser?.id) return;
     if (error) {
       cloudReady = false;
       document.getElementById('status').textContent = '⚠️ تعذرت المزامنة';
