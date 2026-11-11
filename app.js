@@ -865,6 +865,7 @@ Object.assign(window, {
 
 for (const id of ['iqdRate', 'jodRate', 'monthlyBudget']) {
   document.getElementById(id).addEventListener('input', () => {
+    if (needsLogin() && !cloudReady) return;
     if (!settingsDirty) {
       settingsRevision = state.settings.revision ?? null;
       settingsDirty = true;
