@@ -19,7 +19,9 @@
     .tile{background:#1b2c42;border-radius:14px;padding:16px;min-width:0}
     .tile strong{display:block;font-size:clamp(17px,3vw,27px);overflow-wrap:anywhere;margin:10px 0;color:#5de2b3}
     .tile small{display:block}.total{background:linear-gradient(120deg,#173e4c,#14352d);text-align:center}
-    .total strong{font-size:32px;color:#8ff4c9}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+    .total strong{font-size:32px;color:#8ff4c9}
+    .total-equivalent{display:block;color:#b8d9dc;font-size:clamp(14px,2.6vw,19px);font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
     button{background:#2b4561;color:white;border:0;border-radius:10px;padding:11px 14px;font-weight:650;cursor:pointer}
     button.primary{background:#0eaa7e;color:#061c18}button.danger{background:#62313e}button:disabled{opacity:.5}
     input,select,textarea{width:100%;padding:11px;background:#0e1929;border:1px solid #41546b;border-radius:9px;color:white;font:inherit}
@@ -51,10 +53,10 @@
     <h2>💰 محفظتي</h2>
     <div id="tiles" class="grid wallet-grid"></div>
     <div class="grid two" style="margin-top:12px">
-      <div class="tile total"><small>رصيد المحفظة</small><strong id="total">—</strong></div>
-      <div class="tile total"><small>الصافي بعد الديون</small><strong id="totalAfterDebts">—</strong></div>
+      <div class="tile total"><small>رصيد المحفظة</small><strong id="total">—</strong><span id="totalIqd" class="total-equivalent" dir="ltr">—</span></div>
+      <div class="tile total"><small>الصافي بعد الديون</small><strong id="totalAfterDebts">—</strong><span id="totalAfterDebtsIqd" class="total-equivalent" dir="ltr">—</span></div>
     </div>
-    <small id="ratesText"></small>
+    <small id="ratesText" dir="ltr"></small>
   </section>
 
   <p><button onclick="syncNow()">🔄 مزامنة الآن</button> <small id="syncInfo" role="status" aria-live="polite"></small></p>
@@ -224,6 +226,6 @@
   <script src="config.js?v=20261111-3" defer></script>
   <script src="core.js?v=20261111-6" defer></script>
   <script src="reports.js?v=20261111-7" defer></script>
-  <script src="app.js?v=20261111-7" defer></script>
+  <script src="app.js?v=20261111-8" defer></script>
 </body>
 </html>

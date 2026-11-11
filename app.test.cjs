@@ -360,3 +360,28 @@ test('report actions download the chosen format, use a fresh snapshot and leave 
   await d.run('activate(null)');
   assert.equal(link.href, undefined);
 });
+
+test('wallet and after-debt totals show the Iraqi dinar equivalent at the saved rate', async () => {
+  const d = device();
+  const snapshot = {
+    accounts: [
+      { id: 'usd', currency: 'USD', opening_balance: 10.125 },
+      { id: 'jod', currency: 'JOD', opening_balance: 0.709 },
+      { id: 'iqd', currency: 'IQD', opening_balance: 1 }
+    ],
+    debt_entries: [{ person_id: 'friend', direction: 'i_owe', currency: 'USD', amount: 12, occurred_on: '2026-11-11' }],
+    settings: { iqd_per_usd: 1685, jod_per_usd: 0.709, monthly_budget_jod: 600 }
+  };
+  d.context.mockClient = { async rpc() { return { data: structuredClone(snapshot) }; } };
+  await d.run("client=mockClient;activate({user:{id:'user-a',email:'a@example.com'}})");
+
+  assert.equal(d.nodes.get('total').textContent, '11.126 USD');
+  assert.equal(d.nodes.get('totalIqd').textContent, '≈ 18,746.625 IQD');
+  assert.equal(d.nodes.get('totalAfterDebts').textContent, '-0.874 USD');
+  assert.equal(d.nodes.get('totalAfterDebtsIqd').textContent, '≈ -1,473.375 IQD');
+
+  snapshot.settings.iqd_per_usd = 1700;
+  await d.run('reload()');
+  assert.equal(d.nodes.get('totalIqd').textContent, '≈ 18,913.5 IQD');
+  assert.equal(d.nodes.get('totalAfterDebtsIqd').textContent, '≈ -1,486.5 IQD');
+});

@@ -123,6 +123,9 @@ function render() {
     const element = document.getElementById(id);
     element.textContent = fmt(amount, 'USD') + ' USD';
     element.classList.toggle('negative', amount < 0);
+    const iqdEquivalent = document.getElementById(id + 'Iqd');
+    iqdEquivalent.textContent = '≈ ' + fmt(amount * num(settings.iqd_per_usd), 'IQD') + ' IQD';
+    iqdEquivalent.classList.toggle('negative', amount < 0);
   }
   document.getElementById('ratesText').textContent = `1 USD = ${settings.iqd_per_usd} IQD = ${settings.jod_per_usd} JOD`;
   if (!settingsDirty) {
