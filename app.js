@@ -836,14 +836,32 @@ async function migrateLocal() {
   msg('تمت إضافة السجلات الناقصة فقط. بياناتك المحلية محفوظة.');
 }
 
-for (const name of [
-  'saveAccount', 'deleteAccount', 'saveEntry', 'deleteEntry', 'saveBudget', 'deleteBudget',
-  'saveTransfer', 'deleteTransfer', 'savePerson', 'deletePerson', 'saveDebtEntry', 'deleteDebtEntry', 'saveSettings',
-  'connectCloud', 'signUp', 'signIn', 'signOut', 'resetPassword', 'updatePassword', 'syncNow', 'migrateLocal'
-]) {
-  const original = window[name];
+const protectedActions = {
+  saveAccount, deleteAccount, saveEntry, deleteEntry, saveBudget, deleteBudget,
+  saveTransfer, deleteTransfer, savePerson, deletePerson, saveDebtEntry, deleteDebtEntry, saveSettings,
+  connectCloud, signUp, signIn, signOut, resetPassword, updatePassword, syncNow, migrateLocal
+};
+for (const [name, original] of Object.entries(protectedActions)) {
   window[name] = (...args) => action(() => original(...args));
 }
+
+Object.assign(window, {
+  tab,
+  showAccountForm,
+  hideAccountForm,
+  editEntry,
+  renderEntries,
+  renderStats,
+  showBudgetForm,
+  hideBudgetForm,
+  showPersonForm,
+  hidePersonForm,
+  editDebtEntry,
+  cancelDebtEdit,
+  suggestTransferAmount,
+  exportData,
+  importData
+});
 
 for (const id of ['iqdRate', 'jodRate', 'monthlyBudget']) {
   document.getElementById(id).addEventListener('input', () => {
