@@ -1,12 +1,194 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>فلوسي | محفظتي ومصاريفي</title><meta name="referrer" content="no-referrer"><link rel="icon" href="data:,"><style>
-:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#0c1320;color:#e9f1fa}*{box-sizing:border-box}body{margin:0;max-width:1050px;padding:20px 14px 80px;margin:auto}header,.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{margin:0;font-size:29px}h2{font-size:20px;margin:8px 0 14px}.muted,small{color:#9bacc2}.pill{background:#19314b;padding:8px 12px;border-radius:30px;font-size:12px}section{background:#141f30;border:1px solid #2b3d55;border-radius:18px;padding:18px;margin:17px 0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.tile{background:#1b2c42;border-radius:14px;padding:16px;min-width:0}.tile strong{display:block;font-size:clamp(17px,3vw,27px);overflow-wrap:anywhere;margin:10px 0;color:#5de2b3}.tile small{display:block}.total{background:linear-gradient(120deg,#173e4c,#14352d);text-align:center}.total strong{font-size:32px;color:#8ff4c9}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}button{background:#2b4561;color:white;border:0;border-radius:10px;padding:11px 14px;font-weight:650;cursor:pointer}button.primary{background:#0eaa7e;color:#061c18}button.danger{background:#62313e}button:disabled{opacity:.5}input,select,textarea{width:100%;padding:11px;background:#0e1929;border:1px solid #41546b;border-radius:9px;color:white;font:inherit}label{display:block;font-size:13px;color:#bbcada;margin:10px 0 5px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.hide{display:none!important}.item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #2d3e54;padding:12px 0}.item:first-child{border-top:0}.amount{font-variant-numeric:tabular-nums;direction:ltr;display:inline-block}.negative{color:#ff9e9e!important}.good{color:#64e3ad}.controls{display:flex;gap:6px;flex-wrap:wrap}.controls button{padding:7px 10px;font-size:12px}.notice{background:#3b2f1d;border:1px solid #8e7038;border-radius:10px;padding:11px;margin:12px 0;color:#ffe1a4}.success{background:#173c35;padding:10px;border-radius:10px;color:#9cf1cf}.wide{grid-column:1/-1}@media(max-width:560px){.grid{gap:6px}.tile{padding:10px}.tile strong{font-size:16px}.fields{grid-template-columns:1fr}section{padding:13px}}
-</style></head><body>
-<header><div><h1>💸 فلوسي</h1><small>محفظتي • حساباتي • صرفي اليومي</small></div><button onclick="tab('settings')">الدخول والإعدادات</button><span id="status" role="status" aria-live="polite" class="pill">محلي على هذا الجهاز</span></header>
-<div class="notice" id="localWarn">البيانات محفوظة على هذا المتصفح فقط حالياً. اربط Supabase من الإعدادات واحفظ نسخة احتياطية حتى ما تضيع.</div>
-<section><h2>💰 محفظتي</h2><div id="tiles" class="grid"></div><div class="tile total" style="margin-top:12px"><small>المجموع التقريبي بالدولار (بعد احتساب الأرصدة السالبة)</small><strong id="total">—</strong><small id="ratesText"></small></div></section>
-<p><button onclick="syncNow()">🔄 مزامنة الآن</button> <small id="syncInfo" role="status" aria-live="polite"></small></p><div class="tabs"><button onclick="tab('accounts')">🏦 وين فلوسي؟</button><button onclick="tab('add')">➕ عملية جديدة</button><button onclick="tab('entries')">📒 سجل المصاريف</button><button onclick="tab('settings')">⚙️ الإعدادات</button></div>
-<section id="accounts"><div class="bar"><h2>🏦 وين فلوسي؟</h2><button class="primary" onclick="showAccountForm()">+ إضافة حساب</button></div><div id="accountList"></div><div id="accountForm" class="hide"><h2 id="accountFormTitle">حساب جديد</h2><div class="fields"><div><label>اسم الحساب أو الشخص</label><input id="aname" placeholder="مثلاً JKB أو مرتضى"></div><div><label>العملة</label><select id="acurrency"><option>IQD</option><option>JOD</option><option>USD</option></select></div><div><label>الرصيد الافتتاحي (يسمح بالسالب)</label><input id="abalance" type="number" step="0.001"></div></div><p><button class="primary" onclick="saveAccount()">حفظ الحساب</button> <button onclick="hideAccountForm()">إلغاء</button></p><small>لتعديل الرصيد الحالي بعد تسجيل مصاريف، استخدم عملية «تسوية رصيد» بدلاً من تغيير الرصيد الافتتاحي.</small></div></section>
-<section id="add" class="hide"><h2>➕ إضافة عملية</h2><div class="fields"><div><label>نوع العملية</label><select id="kind"><option value="expense">مصروف (خصم)</option><option value="income">إيداع (زيادة)</option><option value="adjustment">تسوية زيادة</option></select></div><div><label>الحساب</label><select id="entryAccount"></select></div><div><label>المبلغ بعملة الحساب</label><input id="amount" type="number" min="0.001" step="0.001" placeholder="0"></div><div><label>التصنيف</label><select id="category"><option>🍔 أكل</option><option>🚗 مواصلات</option><option>🛒 تسوق</option><option>🏃🏻 طلعات</option><option>📱 اشتراكات</option><option>🏠 سكن</option><option>🛍️ شوبنك</option><option>💈 حلاقة</option><option>💰 تحويل أو إيداع</option><option>أخرى</option></select></div><div><label>التاريخ</label><input id="date" type="date"></div><div><label>وين صرفتهم؟ / ملاحظة</label><input id="note" placeholder="مثلاً غداء الجامعة"></div></div><p><button class="primary" onclick="saveEntry()">حفظ العملية وتحديث الرصيد</button></p></section>
-<section id="entries" class="hide"><div class="bar"><h2>📒 سجل العمليات</h2><span id="expenseSummary" class="muted"></span></div><div class="fields"><div><label>فلترة حسب العملة</label><select id="filterCurrency" onchange="renderEntries()"><option value="">كل العملات</option><option>IQD</option><option>JOD</option><option>USD</option></select></div><div><label>بحث</label><input id="search" oninput="renderEntries()" placeholder="الحساب أو الوصف أو التصنيف"></div></div><div id="entryList"></div></section>
-<section id="settings" class="hide"><h2>⚙️ الإعدادات والحفظ</h2><h3>أسعار الصرف</h3><div class="fields"><div><label>كم عراقي مقابل دولار واحد؟</label><input id="iqdRate" type="number" min="1" step="0.001"></div><div><label>كم أردني مقابل دولار واحد؟</label><input id="jodRate" type="number" min="0.00001" step="0.00001"></div></div><p><button onclick="saveRates()">حفظ أسعار الصرف</button></p><h3>النسخ الاحتياطية</h3><p><button onclick="exportData()">⬇️ تصدير JSON</button> <button onclick="document.getElementById('importFile').click()">⬆️ استيراد JSON</button><input class="hide" type="file" id="importFile" accept="application/json" onchange="importData(this)"></p><small>الاستيراد يستبدل البيانات الحالية. صدّر نسخة قبل الاستيراد. لا تشارك ملف النسخة الاحتياطية لأنه يحتوي معلومات مالية.</small><hr style="border:0;border-top:1px solid #34465b;margin:25px 0"><h3>☁️ الحساب السحابي</h3><div id="projectSetup"><p class="muted">شغّل schema.sql أولاً في مشروع Supabase خاص. لا تستخدم مفتاح service_role أو secret key هنا.</p><label>Project URL</label><input id="sbUrl" placeholder="https://xxxx.supabase.co"><label>Publishable / anon key</label><input id="sbKey" type="password" placeholder="sb_publishable_... أو anon key"><p><button onclick="connectCloud()">ربط المشروع</button></p></div><div id="authBox" class="hide"><label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="username"><label>كلمة مرور الحساب</label><input id="password" type="password" minlength="12" autocomplete="current-password"><p><button onclick="signUp()">إنشاء حساب</button> <button class="primary" onclick="signIn()">تسجيل الدخول</button> <button onclick="signOut()">خروج</button> <button onclick="resetPassword()">نسيت كلمة المرور</button> <button id="recoverButton" class="hide" onclick="updatePassword()">حفظ كلمة المرور الجديدة</button></p><p><button onclick="migrateLocal()">رفع بياناتي المحلية إلى السحابة (مرة واحدة)</button></p><small>بعد تسجيل الدخول تُعرض بيانات السحابة فقط. الرفع يضيف السجلات الناقصة فقط ويوقف العملية بالكامل عند وجود تعارض. لا يغيّر أسعار الصرف السحابية الموجودة.</small></div><p id="message" role="status" aria-live="polite" class="muted"></p></section>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script><script src="config.js" defer></script><script src="core.js" defer></script><script src="app.js" defer></script></body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0c1320">
+  <meta name="referrer" content="no-referrer">
+  <title>فلوسي | محفظتي ومصاريفي</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#0c1320;color:#e9f1fa}
+    *{box-sizing:border-box}body{margin:0;max-width:1050px;padding:20px 14px 80px;margin:auto}
+    header,.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    h1{margin:0;font-size:29px}h2{font-size:20px;margin:8px 0 14px}h3{margin-top:22px}.muted,small{color:#9bacc2}
+    .pill{background:#19314b;padding:8px 12px;border-radius:30px;font-size:12px}
+    section{background:#141f30;border:1px solid #2b3d55;border-radius:18px;padding:18px;margin:17px 0}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .tile{background:#1b2c42;border-radius:14px;padding:16px;min-width:0}
+    .tile strong{display:block;font-size:clamp(17px,3vw,27px);overflow-wrap:anywhere;margin:10px 0;color:#5de2b3}
+    .tile small{display:block}.total{background:linear-gradient(120deg,#173e4c,#14352d);text-align:center}
+    .total strong{font-size:32px;color:#8ff4c9}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+    button{background:#2b4561;color:white;border:0;border-radius:10px;padding:11px 14px;font-weight:650;cursor:pointer}
+    button.primary{background:#0eaa7e;color:#061c18}button.danger{background:#62313e}button:disabled{opacity:.5}
+    input,select,textarea{width:100%;padding:11px;background:#0e1929;border:1px solid #41546b;border-radius:9px;color:white;font:inherit}
+    label{display:block;font-size:13px;color:#bbcada;margin:10px 0 5px}
+    .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.hide{display:none!important}
+    .item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #2d3e54;padding:12px 0}
+    .item:first-child{border-top:0}.amount{font-variant-numeric:tabular-nums;direction:ltr;display:inline-block}
+    .negative{color:#ff9e9e!important}.good{color:#64e3ad}.warn{color:#ffd281}
+    .controls{display:flex;gap:6px;flex-wrap:wrap}.controls button{padding:7px 10px;font-size:12px}
+    .notice{background:#3b2f1d;border:1px solid #8e7038;border-radius:10px;padding:11px;margin:12px 0;color:#ffe1a4}
+    .success{background:#173c35;padding:10px;border-radius:10px;color:#9cf1cf}.wide{grid-column:1/-1}
+    .progress{height:9px;background:#0b1725;border-radius:20px;overflow:hidden;margin-top:10px}.progress>span{display:block;height:100%;background:#19c891;border-radius:20px}
+    .progress.over>span{background:#ef767a}.stat-card{border:1px solid #30445e;background:#18263a;border-radius:14px;padding:14px}
+    .stat-card .bar{align-items:flex-start}.debt-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{background:#223751;border-radius:20px;padding:5px 9px;font-size:12px}
+    hr{border:0;border-top:1px solid #34465b;margin:25px 0}
+    @media(max-width:650px){.grid,.grid.two{grid-template-columns:1fr}.wallet-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.tile{padding:10px}.tile strong{font-size:16px}.fields{grid-template-columns:1fr}section{padding:13px}.tabs button{flex:1 1 30%;padding:10px 6px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>💸 فلوسي</h1><small>محفظتي • مصاريفي • ميزانيتي • ديوني</small></div>
+    <button onclick="tab('settings')">الدخول والإعدادات</button>
+    <span id="status" role="status" aria-live="polite" class="pill">محلي على هذا الجهاز</span>
+  </header>
+  <div class="notice" id="localWarn">البيانات محفوظة على هذا المتصفح فقط حالياً. اربط Supabase من الإعدادات واحفظ نسخة احتياطية حتى ما تضيع.</div>
+
+  <section>
+    <h2>💰 محفظتي</h2>
+    <div id="tiles" class="grid wallet-grid"></div>
+    <div class="tile total" style="margin-top:12px"><small>المجموع التقريبي بالدولار (بعد احتساب الأرصدة السالبة)</small><strong id="total">—</strong><small id="ratesText"></small></div>
+  </section>
+
+  <p><button onclick="syncNow()">🔄 مزامنة الآن</button> <small id="syncInfo" role="status" aria-live="polite"></small></p>
+  <div class="tabs">
+    <button onclick="tab('accounts')">🏦 وين فلوسي؟</button>
+    <button onclick="tab('add')">➕ عملية</button>
+    <button onclick="tab('transfers')">🔁 تحويل</button>
+    <button onclick="tab('stats')">📊 الإحصائيات</button>
+    <button onclick="tab('debts')">🤝 ديون الشباب</button>
+    <button onclick="tab('entries')">📒 السجل</button>
+    <button onclick="tab('settings')">⚙️ الإعدادات</button>
+  </div>
+
+  <section id="accounts">
+    <div class="bar"><h2>🏦 وين فلوسي؟</h2><button class="primary" onclick="showAccountForm()">+ إضافة حساب</button></div>
+    <div id="accountForm" class="hide">
+      <h2 id="accountFormTitle">حساب جديد</h2>
+      <div class="fields">
+        <div><label>اسم الحساب أو الشخص</label><input id="aname" maxlength="100" placeholder="مثلاً JKB أو مرتضى"></div>
+        <div><label>العملة</label><select id="acurrency"><option>IQD</option><option>JOD</option><option>USD</option></select></div>
+        <div><label>الرصيد الافتتاحي (يسمح بالسالب)</label><input id="abalance" type="number" step="0.001"></div>
+      </div>
+      <p><button class="primary" onclick="saveAccount()">حفظ الحساب</button> <button onclick="hideAccountForm()">إلغاء</button></p>
+      <small id="accountFormHelp">لتعديل الرصيد الحالي بعد تسجيل مصاريف، استخدم عملية «تسوية رصيد» بدلاً من تغيير الرصيد الافتتاحي.</small>
+    </div>
+    <div id="accountList"></div>
+  </section>
+
+  <section id="add" class="hide">
+    <h2>➕ إضافة عملية</h2>
+    <div class="fields">
+      <div><label>نوع العملية</label><select id="kind"><option value="expense">مصروف (خصم)</option><option value="income">إيداع (زيادة)</option><option value="adjustment">تسوية زيادة</option></select></div>
+      <div><label>الحساب</label><select id="entryAccount"></select></div>
+      <div><label>المبلغ بعملة الحساب</label><input id="amount" type="number" min="0.001" step="0.001" placeholder="0"></div>
+      <div><label>التصنيف</label><select id="category"></select></div>
+      <div><label>التاريخ</label><input id="date" type="date"></div>
+      <div><label>وين صرفتهم؟ / ملاحظة</label><input id="note" maxlength="2000" placeholder="مثلاً غداء الجامعة"></div>
+    </div>
+    <p><button class="primary" onclick="saveEntry()">حفظ العملية وتحديث الرصيد</button></p>
+  </section>
+
+  <section id="transfers" class="hide">
+    <h2>🔁 تحويل بين حساباتي</h2>
+    <div class="fields">
+      <div><label>من حساب</label><select id="transferFrom" onchange="suggestTransferAmount()"></select></div>
+      <div><label>إلى حساب</label><select id="transferTo" onchange="suggestTransferAmount()"></select></div>
+      <div><label>المبلغ المسحوب</label><input id="transferFromAmount" type="number" min="0.001" step="0.001" placeholder="0" oninput="suggestTransferAmount()"></div>
+      <div><label>المبلغ الواصل</label><input id="transferToAmount" type="number" min="0.001" step="0.001" placeholder="0"></div>
+      <div><label>التاريخ</label><input id="transferDate" type="date"></div>
+      <div><label>ملاحظة</label><input id="transferNote" maxlength="2000" placeholder="مثلاً تحويل من الكاش إلى البطاقة"></div>
+    </div>
+    <p><button class="primary" onclick="saveTransfer()">تنفيذ التحويل</button></p>
+    <small>إذا الحسابين بنفس العملة، مبلغ الوصول يتعبّى تلقائياً. إذا مختلفات، أدخل المبلغ الذي وصل فعلياً.</small>
+    <div id="transferList"></div>
+  </section>
+
+  <section id="stats" class="hide">
+    <div class="bar"><h2>📊 إحصائيات المصروف</h2><div><label for="statsMonth">الشهر</label><input id="statsMonth" type="month" onchange="renderStats()"></div></div>
+    <div id="budgetSummary" class="grid"></div>
+    <h3>الصرف حسب التصنيف</h3>
+    <div id="categoryStats" class="grid two"></div>
+    <hr>
+    <div class="bar"><h3>حدود التصنيفات الشهرية</h3><button class="primary" onclick="showBudgetForm()">+ تصنيف جديد</button></div>
+    <div id="budgetList"></div>
+    <div id="budgetForm" class="hide">
+      <div class="fields">
+        <div><label>اسم التصنيف</label><input id="budgetCategory" maxlength="200" placeholder="مثلاً ☕ قهوة"></div>
+        <div><label>الحد الشهري بالدينار الأردني</label><input id="budgetLimit" type="number" min="0" max="1000000000" step="0.001" placeholder="0"></div>
+      </div>
+      <p><button class="primary" onclick="saveBudget()">حفظ الحد</button> <button onclick="hideBudgetForm()">إلغاء</button></p>
+      <small>إذا خليت الحد 0 يبقى التصنيف موجود وتظهر مصاريفه، لكن بدون تنبيه تجاوز.</small>
+    </div>
+  </section>
+
+  <section id="debts" class="hide">
+    <div class="bar"><h2>🤝 سجل الديون ويا الشباب</h2><button class="primary" onclick="showPersonForm()">+ اسم جديد</button></div>
+    <div id="debtSummary" class="grid"></div>
+    <div id="personForm" class="hide">
+      <h3 id="personFormTitle">إضافة شخص</h3>
+      <div class="fields"><div><label>الاسم</label><input id="personName" maxlength="100" placeholder="مثلاً علي"></div></div>
+      <p><button class="primary" onclick="savePerson()">حفظ الاسم</button> <button onclick="hidePersonForm()">إلغاء</button></p>
+    </div>
+    <div id="personList"></div>
+    <hr>
+    <h3 id="debtFormTitle">إضافة دين</h3>
+    <div class="fields">
+      <div><label>الشخص</label><select id="debtPerson"></select></div>
+      <div><label>نوع الدين</label><select id="debtDirection"><option value="owed_to_me">إلي عنده (هو مدين إلي)</option><option value="i_owe">عليّ إله (أنا مدين إله)</option></select></div>
+      <div><label>المبلغ</label><input id="debtAmount" type="number" min="0.001" step="0.001" placeholder="0"></div>
+      <div><label>العملة</label><select id="debtCurrency"><option>IQD</option><option>JOD</option><option>USD</option></select></div>
+      <div><label>التاريخ</label><input id="debtDate" type="date"></div>
+      <div><label>ملاحظة</label><input id="debtNote" maxlength="2000" placeholder="مثلاً حساب المطعم"></div>
+    </div>
+    <p><button class="primary" onclick="saveDebtEntry()">حفظ الدين</button> <button id="cancelDebtEdit" class="hide" onclick="cancelDebtEdit()">إلغاء التعديل</button></p>
+    <div id="debtList"></div>
+  </section>
+
+  <section id="entries" class="hide">
+    <div class="bar"><h2>📒 سجل العمليات</h2><span id="expenseSummary" class="muted"></span></div>
+    <div class="fields">
+      <div><label>فلترة حسب العملة</label><select id="filterCurrency" onchange="renderEntries()"><option value="">كل العملات</option><option>IQD</option><option>JOD</option><option>USD</option></select></div>
+      <div><label>بحث</label><input id="search" oninput="renderEntries()" placeholder="الحساب أو الوصف أو التصنيف"></div>
+    </div>
+    <div id="entryList"></div>
+  </section>
+
+  <section id="settings" class="hide">
+    <h2>⚙️ الإعدادات والحفظ</h2>
+    <h3>أسعار الصرف والميزانية</h3>
+    <div class="fields">
+      <div><label>كم عراقي مقابل دولار واحد؟</label><input id="iqdRate" type="number" min="1" step="0.001"></div>
+      <div><label>كم أردني مقابل دولار واحد؟</label><input id="jodRate" type="number" min="0.00001" step="0.00001"></div>
+      <div><label>ميزانيتي الشهرية الكلية (JOD)</label><input id="monthlyBudget" type="number" min="0" step="0.001"></div>
+    </div>
+    <p><button onclick="saveSettings()">حفظ الإعدادات المالية</button></p>
+    <h3>النسخ الاحتياطية</h3>
+    <p><button onclick="exportData()">⬇️ تصدير JSON</button> <button onclick="document.getElementById('importFile').click()">⬆️ استيراد JSON</button><input class="hide" type="file" id="importFile" accept="application/json" onchange="importData(this)"></p>
+    <small>الاستيراد يستبدل البيانات المحلية فقط بعد موافقتك ويحفظ نسخة سابقة. لا تشارك ملف النسخة الاحتياطية لأنه يحتوي معلومات مالية.</small>
+    <hr>
+    <h3>☁️ الحساب السحابي</h3>
+    <div id="projectSetup">
+      <p class="muted">شغّل schema.sql أولاً في مشروع Supabase خاص. لا تستخدم مفتاح service_role أو secret key هنا.</p>
+      <label>Project URL</label><input id="sbUrl" placeholder="https://xxxx.supabase.co">
+      <label>Publishable / anon key</label><input id="sbKey" type="password" placeholder="sb_publishable_... أو anon key">
+      <p><button onclick="connectCloud()">ربط المشروع</button></p>
+    </div>
+    <div id="authBox" class="hide">
+      <label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="username">
+      <label>كلمة مرور الحساب</label><input id="password" type="password" minlength="12" autocomplete="current-password">
+      <p><button onclick="signUp()">إنشاء حساب</button> <button class="primary" onclick="signIn()">تسجيل الدخول</button> <button onclick="signOut()">خروج</button> <button onclick="resetPassword()">نسيت كلمة المرور</button> <button id="recoverButton" class="hide" onclick="updatePassword()">حفظ كلمة المرور الجديدة</button></p>
+      <p><button onclick="migrateLocal()">رفع بياناتي المحلية إلى السحابة (مرة واحدة)</button></p>
+      <small>بعد تسجيل الدخول تُعرض بيانات السحابة فقط. الرفع يضيف السجلات الناقصة فقط ويوقف العملية بالكامل عند وجود تعارض. لا يغيّر البيانات السحابية الموجودة.</small>
+    </div>
+    <p id="message" role="status" aria-live="polite" class="muted"></p>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="core.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
