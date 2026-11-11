@@ -52,3 +52,37 @@ test('local transfer changes both balances and survives restart',async()=>{
  assert.equal(d.run('bal(state.accounts[1])'),12);
  const restarted=device(d.storage);assert.equal(restarted.run('state.transfers.length'),1);
 });
+
+test('tapping a balance reconciles increases and decreases without counting them as spending', async () => {
+  const d = device();
+  await d.run(`
+    insertRow('accounts', {
+      id: '11111111-1111-4111-8111-111111111111', name: 'Test', currency: 'JOD', opening_balance: 104.76
+    });
+  `);
+  await d.run(`
+    insertRow('entries', {
+      id: '22222222-2222-4222-8222-222222222222', account_id: state.accounts[0].id,
+      amount: 7.25, kind: 'expense', category: 'food', note: '', occurred_on: today()
+    });
+  `);
+  d.run('render(); showAccountForm(state.accounts[0].id)');
+  assert.match(d.nodes.get('accountList').innerHTML, /showBalanceForm.*97\.51/);
+  assert.equal(d.nodes.get('abalance').disabled, true);
+  d.run('showBalanceForm()');
+  assert.equal(d.nodes.get('newBalance').value, 97.51);
+  d.nodes.get('newBalance').value = '110';
+  await d.run('saveAccountBalance()');
+  assert.equal(d.run('bal(state.accounts[0])'), 110);
+  assert.equal(d.run('state.entries[1].amount'), 12.49);
+
+  d.run('showBalanceForm(state.accounts[0].id)');
+  d.nodes.get('newBalance').value = '-5.125';
+  await d.run('saveAccountBalance()');
+  assert.equal(d.run('state.accounts[0].opening_balance'), 104.76);
+  assert.equal(d.run('state.entries[2].amount'), 115.125);
+  assert.equal(d.run('FuloosiCore.monthStats(state, thisMonth()).total_spent_jod'), 7.25);
+  assert.match(d.nodes.get('expenseSummary').textContent, /7\.25 JOD/);
+  assert.match(d.nodes.get('entryList').innerHTML, /تسوية رصيد/);
+  assert.equal(device(d.storage).run('bal(state.accounts[0])'), -5.125);
+});

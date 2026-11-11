@@ -41,6 +41,7 @@ let cloudReady = false;
 
 let accountEditId = null;
 let accountRevision = null;
+let balanceDraft = null;
 let entryEditId = null;
 let entryRevision = null;
 let entryDraft = null;
@@ -132,31 +133,37 @@ function render() {
 function renderAccounts() {
   document.getElementById('accountList').innerHTML = CURRENCIES.map(currency => `
     <h3>${labels[currency]}</h3>
-    ${state.accounts.filter(account => account.currency === currency).map(account => `
+    ${state.accounts.filter(account => account.currency === currency).map(account => {
+      const amount = bal(account);
+      const formatted = fmt(amount, currency);
+      return `
       <div class="item">
         <div><b>${escapeHtml(account.name)}</b><br><small>${currency}</small></div>
         <div style="text-align:left">
-          <strong class="amount ${bal(account) < 0 ? 'negative' : ''}">${fmt(bal(account), currency)}</strong>
+          <button type="button" class="amount balance-button ${amount < 0 ? 'negative' : ''}" onclick="showBalanceForm('${account.id}')" aria-label="تعديل رصيد ${escapeHtml(account.name)}، ${formatted} ${currency}">${formatted}</button>
           <div class="controls">
             <button onclick="showAccountForm('${account.id}')">تعديل</button>
             <button class="danger" onclick="deleteAccount('${account.id}')">حذف</button>
           </div>
         </div>
       </div>
-    `).join('') || '<small>لا توجد حسابات</small>'}
+      `;
+    }).join('') || '<small>لا توجد حسابات</small>'}
   `).join('');
 }
 
 function renderCategories() {
   const select = document.getElementById('category');
   const selected = select.value;
+  const { balanceAdjustmentCategory } = FuloosiCore;
   const categories = new Set([
     ...FuloosiCore.defaultBudgets().map(row => row.category),
     ...state.budgets.map(row => row.category),
     ...state.entries.map(row => row.category),
     '💰 تحويل أو إيداع',
     'أخرى'
-  ]);
+  ].filter(category => category !== balanceAdjustmentCategory));
+  if (entryDraft?.category === balanceAdjustmentCategory) categories.add(balanceAdjustmentCategory);
   select.innerHTML = [...categories].map(category => `<option>${escapeHtml(category)}</option>`).join('');
   if ([...categories].includes(selected)) select.value = selected;
 
@@ -190,7 +197,7 @@ function renderEntries() {
   }).join('') : '<p class="muted">ماكو عمليات مسجلة بعد.</p>';
 
   document.getElementById('expenseSummary').textContent = 'مصاريف اليوم: ' + CURRENCIES.map(code => {
-    const total = state.entries.filter(entry => entry.kind === 'expense' && entry.occurred_on === today() && state.accounts.find(account => account.id === entry.account_id)?.currency === code).reduce((sum, entry) => sum + num(entry.amount), 0);
+    const total = state.entries.filter(entry => FuloosiCore.isSpending(entry) && entry.occurred_on === today() && state.accounts.find(account => account.id === entry.account_id)?.currency === code).reduce((sum, entry) => sum + num(entry.amount), 0);
     return fmt(total, code) + ' ' + code;
   }).join(' | ');
 }
@@ -348,20 +355,22 @@ async function removeRow(table, id, revision) {
 }
 
 function showAccountForm(id) {
+  hideBalanceForm();
   accountEditId = id || null;
   const account = state.accounts.find(row => row.id === id);
-  const hasEntries = Boolean(account && state.entries.some(entry => entry.account_id === account.id));
+  const hasActivity = Boolean(account && (state.entries.some(entry => entry.account_id === id)
+    || state.transfers.some(transfer => transfer.from_account_id === id || transfer.to_account_id === id)));
   accountRevision = account?.revision ?? null;
   document.getElementById('accountForm').classList.remove('hide');
   document.getElementById('accountFormTitle').textContent = account ? 'تعديل حساب' : 'إضافة حساب';
   document.getElementById('aname').value = account?.name || '';
   document.getElementById('acurrency').value = account?.currency || 'IQD';
   document.getElementById('abalance').value = account?.opening_balance ?? 0;
-  document.getElementById('acurrency').disabled = hasEntries;
-  document.getElementById('abalance').disabled = hasEntries;
-  document.getElementById('accountFormHelp').textContent = hasEntries
-    ? 'تقدر تعدل الاسم. العملة والرصيد الافتتاحي محميّات لأن هذا الحساب يحتوي عمليات؛ استخدم «تسوية رصيد» لتغيير الرصيد الحالي.'
-    : 'تقدر تعدل الاسم والعملة والرصيد الافتتاحي.';
+  document.getElementById('acurrency').disabled = hasActivity;
+  document.getElementById('abalance').disabled = hasActivity;
+  document.getElementById('openingBalanceField').classList.toggle('hide', hasActivity);
+  document.getElementById('editBalanceAction').classList.toggle('hide', !account);
+  if (account) document.getElementById('editCurrentBalance').textContent = `${fmt(bal(account), account.currency)} ${account.currency}`;
   document.getElementById('accountForm').scrollIntoView?.({ behavior: 'smooth', block: 'center' });
 }
 
@@ -371,6 +380,58 @@ function hideAccountForm() {
   document.getElementById('abalance').disabled = false;
   accountEditId = null;
   accountRevision = null;
+}
+
+function showBalanceForm(id = accountEditId) {
+  if (busy) return;
+  const account = state.accounts.find(row => row.id === id);
+  if (!account) return;
+  hideAccountForm();
+  const current = bal(account);
+  balanceDraft = { id, currency: account.currency, current };
+  document.getElementById('balanceAccount').textContent = `${account.name} · الرصيد الحالي ${fmt(current, account.currency)} ${account.currency}`;
+  document.getElementById('newBalance').value = current;
+  const form = document.getElementById('balanceForm');
+  form.classList.remove('hide');
+  form.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  document.getElementById('newBalance').focus?.({ preventScroll: true });
+  document.getElementById('newBalance').select?.();
+}
+
+function hideBalanceForm() {
+  document.getElementById('balanceForm').classList.add('hide');
+  document.getElementById('newBalance').value = '';
+  balanceDraft = null;
+}
+
+async function saveAccountBalance() {
+  const draft = balanceDraft;
+  if (!draft) return;
+  const target = FuloosiCore.money(document.getElementById('newBalance').value);
+  if (cloud) await reload();
+  const account = state.accounts.find(row => row.id === draft.id);
+  if (balanceDraft !== draft) return;
+  if (!account || account.currency !== draft.currency) {
+    hideBalanceForm();
+    throw Error('تغيّر الحساب. افتح الرصيد من القائمة مرة ثانية.');
+  }
+  const current = bal(account);
+  if (current !== draft.current) {
+    draft.current = current;
+    document.getElementById('balanceAccount').textContent = `${account.name} · الرصيد الحالي ${fmt(current, account.currency)} ${account.currency}`;
+    throw Error('تغيّر الرصيد بعد فتح التعديل. راجع الرصيد الحالي واضغط حفظ مرة ثانية إذا تريد تكمل.');
+  }
+  const difference = target - Math.round(current * 1000);
+  if (difference) {
+    const amount = Math.abs(difference) / 1000;
+    FuloosiCore.money(amount);
+    await insertRow('entries', {
+      id: uid(), account_id: account.id, kind: difference < 0 ? 'expense' : 'adjustment', amount,
+      category: FuloosiCore.balanceAdjustmentCategory, note: '', occurred_on: today(), created_at: new Date().toISOString()
+    });
+  }
+  hideBalanceForm();
+  if (difference) await reload();
 }
 
 async function saveAccount() {
@@ -398,8 +459,11 @@ async function deleteAccount(id) {
 async function saveEntry() {
   const account_id = document.getElementById('entryAccount').value;
   const amount = Number(document.getElementById('amount').value);
-  const kind = document.getElementById('kind').value;
-  const category = document.getElementById('category').value;
+  const selectedKind = document.getElementById('kind').value;
+  const isDecrease = selectedKind === 'adjustment_decrease';
+  const kind = isDecrease ? 'expense' : selectedKind;
+  const selectedCategory = document.getElementById('category').value;
+  const category = isDecrease ? FuloosiCore.balanceAdjustmentCategory : selectedCategory;
   const note = document.getElementById('note').value.trim();
   const occurred_on = document.getElementById('date').value;
   if (!state.accounts.some(account => account.id === account_id) || !Number.isFinite(amount) || amount <= 0 || !occurred_on) throw Error('تأكد من الحساب والمبلغ والتاريخ');
@@ -422,8 +486,9 @@ function editEntry(id) {
   entryRevision = entry.revision ?? null;
   entryDraft = structuredClone(entry);
   tab('add');
+  renderCategories();
   document.getElementById('entryAccount').value = entry.account_id;
-  document.getElementById('kind').value = entry.kind;
+  document.getElementById('kind').value = entry.kind === 'expense' && !FuloosiCore.isSpending(entry) ? 'adjustment_decrease' : entry.kind;
   document.getElementById('category').value = entry.category;
   document.getElementById('date').value = entry.occurred_on;
   document.getElementById('note').value = entry.note;
@@ -680,6 +745,7 @@ function clearForms() {
   personEditId = null;
   debtEditId = null;
   hideAccountForm();
+  hideBalanceForm();
   hideBudgetForm();
   hidePersonForm();
   cancelDebtEdit();
@@ -837,7 +903,7 @@ async function migrateLocal() {
 }
 
 const protectedActions = {
-  saveAccount, deleteAccount, saveEntry, deleteEntry, saveBudget, deleteBudget,
+  saveAccount, saveAccountBalance, deleteAccount, saveEntry, deleteEntry, saveBudget, deleteBudget,
   saveTransfer, deleteTransfer, savePerson, deletePerson, saveDebtEntry, deleteDebtEntry, saveSettings,
   connectCloud, signUp, signIn, signOut, resetPassword, updatePassword, syncNow, migrateLocal
 };
@@ -849,6 +915,8 @@ Object.assign(window, {
   tab,
   showAccountForm,
   hideAccountForm,
+  showBalanceForm,
+  hideBalanceForm,
   editEntry,
   renderEntries,
   renderStats,

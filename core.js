@@ -4,6 +4,10 @@
   const currencies = ['IQD', 'JOD', 'USD'];
   const directions = ['owed_to_me', 'i_owe'];
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const balanceAdjustmentCategory = 'تسوية رصيد';
+
+  // The existing ledger represents every debit with kind 'expense'.
+  const isSpending = entry => entry.kind === 'expense' && entry.category !== balanceAdjustmentCategory;
 
   function money(value) {
     const n = Number(value);
@@ -113,7 +117,7 @@
     if (!/^\d{4}-\d{2}$/.test(month)) throw Error('الشهر غير صالح');
     const spent = {};
     for (const entry of state.entries) {
-      if (entry.kind !== 'expense' || !String(entry.occurred_on).startsWith(month + '-')) continue;
+      if (!isSpending(entry) || !String(entry.occurred_on).startsWith(month + '-')) continue;
       const account = state.accounts.find(a => a.id === entry.account_id);
       if (!account) continue;
       spent[entry.category] = (spent[entry.category] || 0) + toJod(entry.amount, account.currency, state.settings);
@@ -141,7 +145,7 @@
     try { return JSON.parse(atob(key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role === 'anon'; } catch { return false; }
   }
 
-  const api = { money, validate, balance, toJod, monthStats, debtNet, defaultBudgets, validConfig };
+  const api = { money, validate, balance, toJod, monthStats, debtNet, defaultBudgets, validConfig, balanceAdjustmentCategory, isSpending };
   root.FuloosiCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

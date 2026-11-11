@@ -27,6 +27,7 @@
     .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.hide{display:none!important}
     .item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #2d3e54;padding:12px 0}
     .item:first-child{border-top:0}.amount{font-variant-numeric:tabular-nums;direction:ltr;display:inline-block}
+    .balance-button{min-height:44px;padding:4px 0;background:transparent;color:inherit;font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:4px}
     .negative{color:#ff9e9e!important}.good{color:#64e3ad}.warn{color:#ffd281}
     .controls{display:flex;gap:6px;flex-wrap:wrap}.controls button{padding:7px 10px;font-size:12px}
     .notice{background:#3b2f1d;border:1px solid #8e7038;border-radius:10px;padding:11px;margin:12px 0;color:#ffe1a4}
@@ -70,18 +71,29 @@
       <div class="fields">
         <div><label>اسم الحساب أو الشخص</label><input id="aname" maxlength="100" placeholder="مثلاً JKB أو مرتضى"></div>
         <div><label>العملة</label><select id="acurrency"><option>IQD</option><option>JOD</option><option>USD</option></select></div>
-        <div><label>الرصيد الافتتاحي (يسمح بالسالب)</label><input id="abalance" type="number" step="0.001"></div>
+        <div id="openingBalanceField"><label for="abalance">الرصيد الافتتاحي (يسمح بالسالب)</label><input id="abalance" type="number" step="0.001"></div>
+        <div id="editBalanceAction" class="hide">
+          <label for="editCurrentBalance">تعديل الرصيد الحالي</label>
+          <button id="editCurrentBalance" type="button" class="amount balance-button" onclick="showBalanceForm()"></button>
+        </div>
       </div>
       <p><button class="primary" onclick="saveAccount()">حفظ الحساب</button> <button onclick="hideAccountForm()">إلغاء</button></p>
-      <small id="accountFormHelp">لتعديل الرصيد الحالي بعد تسجيل مصاريف، استخدم عملية «تسوية رصيد» بدلاً من تغيير الرصيد الافتتاحي.</small>
     </div>
+    <form id="balanceForm" class="hide" onsubmit="event.preventDefault(); saveAccountBalance()">
+      <h2>تعديل الرصيد الحالي</h2>
+      <p id="balanceAccount" class="muted"></p>
+      <div class="fields">
+        <div><label for="newBalance">الرصيد الجديد (يسمح بالسالب)</label><input id="newBalance" type="number" step="0.001" dir="ltr" required></div>
+      </div>
+      <p><button class="primary" type="submit">حفظ الرصيد</button> <button type="button" onclick="hideBalanceForm()">إلغاء</button></p>
+    </form>
     <div id="accountList"></div>
   </section>
 
   <section id="add" class="hide">
     <h2>➕ إضافة عملية</h2>
     <div class="fields">
-      <div><label>نوع العملية</label><select id="kind"><option value="expense">مصروف (خصم)</option><option value="income">إيداع (زيادة)</option><option value="adjustment">تسوية زيادة</option></select></div>
+      <div><label>نوع العملية</label><select id="kind"><option value="expense">مصروف (خصم)</option><option value="income">إيداع (زيادة)</option><option value="adjustment">تسوية زيادة</option><option value="adjustment_decrease">تسوية نقص</option></select></div>
       <div><label>الحساب</label><select id="entryAccount"></select></div>
       <div><label>المبلغ بعملة الحساب</label><input id="amount" type="number" min="0.001" step="0.001" placeholder="0"></div>
       <div><label>التصنيف</label><select id="category"></select></div>
@@ -188,7 +200,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script>
   <script src="config.js?v=20261111-3" defer></script>
-  <script src="core.js?v=20261111-3" defer></script>
-  <script src="app.js?v=20261111-3" defer></script>
+  <script src="core.js?v=20261111-4" defer></script>
+  <script src="app.js?v=20261111-4" defer></script>
 </body>
 </html>
