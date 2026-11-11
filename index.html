@@ -191,6 +191,14 @@
       <div><label>ميزانيتي الشهرية الكلية (JOD)</label><input id="monthlyBudget" type="number" min="0" step="0.001"></div>
     </div>
     <p><button onclick="saveSettings()">حفظ الإعدادات المالية</button></p>
+    <h3>تصدير التقارير</h3>
+    <div class="fields">
+      <div><label for="reportPeriod">فترة التقرير</label><select id="reportPeriod" onchange="updateReportPeriod()"><option value="all">كل السجل</option><option value="month">شهر معيّن</option></select></div>
+      <div id="reportMonthField" class="hide"><label for="reportMonth">الشهر</label><input id="reportMonth" type="month" placeholder="YYYY-MM"></div>
+    </div>
+    <p><button onclick="exportReport('xlsx')">⬇️ تنزيل Excel</button> <button onclick="exportReport('pdf')">⬇️ تنزيل PDF</button></p>
+    <small id="reportStatus" class="muted" role="status" aria-live="polite"></small>
+    <p id="reportDownloadBox" class="hide"><a id="reportDownload" style="color:#8ff4c9">تنزيل الملف الجاهز</a></p>
     <h3>النسخ الاحتياطية</h3>
     <p><button onclick="exportData()">⬇️ تصدير JSON</button> <button onclick="document.getElementById('importFile').click()">⬆️ استيراد JSON</button><input class="hide" type="file" id="importFile" accept="application/json" onchange="importData(this)"></p>
     <small>الاستيراد يستبدل البيانات المحلية فقط بعد موافقتك ويحفظ نسخة سابقة. لا تشارك ملف النسخة الاحتياطية لأنه يحتوي معلومات مالية.</small>
@@ -215,6 +223,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script>
   <script src="config.js?v=20261111-3" defer></script>
   <script src="core.js?v=20261111-6" defer></script>
-  <script src="app.js?v=20261111-6" defer></script>
+  <script src="reports.js?v=20261111-7" defer></script>
+  <script src="app.js?v=20261111-7" defer></script>
 </body>
 </html>

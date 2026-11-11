@@ -55,6 +55,7 @@ let debtDraft = null;
 let settlementDraft = null;
 let settingsDirty = false;
 let settingsRevision = null;
+let reportUrl = null;
 
 const num = value => Number(value || 0);
 const fmt = (value, currency = 'JOD') => new Intl.NumberFormat('en-US', {
@@ -817,6 +818,80 @@ async function saveSettings() {
   msg('تم حفظ الإعدادات والميزانية الشهرية');
 }
 
+const reportFormats = {
+  xlsx: { library: 'ExcelJS', script: 'exceljs-4.4.0.min.js', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'Excel' },
+  pdf: { library: 'PDFLib', script: 'pdf-lib-1.17.1.min.js', mime: 'application/pdf', label: 'PDF' }
+};
+
+function updateReportPeriod() {
+  const isMonth = document.getElementById('reportPeriod').value === 'month';
+  document.getElementById('reportMonthField').classList.toggle('hide', !isMonth);
+  const input = document.getElementById('reportMonth');
+  if (isMonth && !input.value) input.value = thisMonth();
+}
+
+function clearReportDownload() {
+  if (reportUrl) {
+    URL.revokeObjectURL(reportUrl);
+    reportUrl = null;
+    document.getElementById('reportDownload').removeAttribute('href');
+  }
+  document.getElementById('reportDownloadBox').classList.add('hide');
+}
+
+async function loadReportLibrary(format) {
+  if (window[format.library]) return window[format.library];
+  const script = document.createElement('script');
+  script.src = format.script;
+  await new Promise((resolve, reject) => {
+    script.onload = resolve;
+    script.onerror = () => reject(Error(`تعذر تحميل أداة ${format.label}. جرّب مرة ثانية.`));
+    document.head.appendChild(script);
+  }).finally(() => script.remove());
+  if (!window[format.library]) throw Error('تعذر تجهيز التصدير.');
+  return window[format.library];
+}
+
+async function exportReport(extension) {
+  const format = reportFormats[extension];
+  if (!format) throw Error('صيغة التصدير غير متاحة.');
+  const month = document.getElementById('reportPeriod').value === 'month' ? document.getElementById('reportMonth').value : '';
+  if (!month && document.getElementById('reportPeriod').value === 'month') throw Error('اختار الشهر أولاً.');
+  const status = document.getElementById('reportStatus');
+  clearReportDownload();
+  status.textContent = `جاري تجهيز ${format.label}…`;
+  const version = epoch;
+  try {
+    if (cloud || needsLogin()) {
+      if (!currentUser) throw Error('سجّل الدخول حتى تصدّر بياناتك.');
+      await reload({ fresh: true });
+      if (version !== epoch) return;
+      requireCloud();
+    } else if (storageBroken) {
+      throw Error('تعذر قراءة البيانات المحلية.');
+    }
+    const report = FuloosiReports.build(state, month, today());
+    const library = await loadReportLibrary(format);
+    if (version !== epoch) return;
+    const bytes = extension === 'xlsx'
+      ? await FuloosiReports.excel(report, library)
+      : await FuloosiReports.pdf(report, library, document);
+    if (version !== epoch) return;
+    reportUrl = URL.createObjectURL(new Blob([bytes], { type: format.mime }));
+    const link = document.getElementById('reportDownload');
+    link.href = reportUrl;
+    link.download = `fuloosi-${month || 'all'}-${report.stamp}.${extension}`;
+    link.textContent = `تنزيل ${format.label}`;
+    document.getElementById('reportDownloadBox').classList.remove('hide');
+    status.textContent = `ملف ${format.label} جاهز.`;
+    link.click();
+  } catch (error) {
+    if (version !== epoch) return;
+    status.textContent = error.message;
+    throw error;
+  }
+}
+
 function exportData() {
   const blob = new Blob([JSON.stringify({ format: 'fuloosi-v4', exported_at: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -862,6 +937,8 @@ function clearForms() {
   hideBudgetForm();
   hidePersonForm();
   hideSettlementForm();
+  clearReportDownload();
+  document.getElementById('reportStatus').textContent = '';
   cancelDebtEdit();
   ['amount', 'note', 'password', 'aname', 'abalance', 'personName', 'budgetCategory', 'budgetLimit'].forEach(id => { document.getElementById(id).value = ''; });
 }
@@ -1019,7 +1096,7 @@ async function migrateLocal() {
 const protectedActions = {
   saveAccount, saveAccountBalance, deleteAccount, saveEntry, deleteEntry, saveBudget, deleteBudget,
   saveTransfer, deleteTransfer, savePerson, deletePerson, saveDebtEntry, saveDebtSettlement, deleteDebtEntry, saveSettings,
-  connectCloud, signUp, signIn, signOut, resetPassword, updatePassword, syncNow, migrateLocal
+  connectCloud, signUp, signIn, signOut, resetPassword, updatePassword, syncNow, migrateLocal, exportReport
 };
 for (const [name, original] of Object.entries(protectedActions)) {
   window[name] = (...args) => action(() => original(...args));
@@ -1043,6 +1120,7 @@ Object.assign(window, {
   editDebtEntry,
   cancelDebtEdit,
   suggestTransferAmount,
+  updateReportPeriod,
   exportData,
   importData
 });

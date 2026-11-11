@@ -294,3 +294,69 @@ test('cloud settlement retries use the same ID and refresh the wallet snapshot',
   assert.equal(d.run('FuloosiCore.debtNet(null, state.debt_entries).JOD'), 0);
   assert.equal(d.run('settlementDraft'), null);
 });
+
+test('report actions download the chosen format, use a fresh snapshot and leave JSON available', async () => {
+  const d = device();
+  const formats = require('./reports.js');
+  const snapshot = {
+    accounts: [{ id: 'wallet', name: 'كاش', currency: 'JOD', opening_balance: 50 }],
+    entries: [
+      { id: 'older', account_id: 'wallet', kind: 'expense', amount: 1, category: 'أكل', occurred_on: '2026-10-31' },
+      { id: 'recent', account_id: 'wallet', kind: 'expense', amount: 2, category: 'أكل', occurred_on: '2026-11-01' }
+    ]
+  };
+  let syncs = 0;
+  const renderedPeriods = [];
+  d.context.mockClient = { async rpc() { syncs++; return { data: structuredClone(snapshot) }; } };
+  d.context.FULOOSI_CONFIG = { requireAuth: true };
+  d.context.FuloosiReports = {
+    ...formats,
+    async excel(report, library) {
+      renderedPeriods.push(report.period);
+      return formats.excel(report, library);
+    },
+    async pdf(report) {
+      renderedPeriods.push(report.period);
+      return new Uint8Array([37, 80, 68, 70]);
+    }
+  };
+  d.context.ExcelJS = require('./exceljs-4.4.0.min.js');
+  d.context.PDFLib = {};
+  const files = [];
+  d.context.URL = { createObjectURL(blob) { files.push(blob); return 'blob:' + files.length; }, revokeObjectURL() {} };
+  const link = d.context.document.getElementById('reportDownload');
+  const downloads = [];
+  link.click = () => downloads.push(link.download);
+  link.removeAttribute = key => delete link[key];
+  d.context.document.createElement = () => ({ click() { downloads.push(this.download); } });
+
+  await d.run("exportReport('xlsx')");
+  assert.match(d.nodes.get('reportStatus').textContent, /سجّل الدخول/);
+  assert.equal(files.length, 0);
+  await d.run("client=mockClient;activate({user:{id:'user-a',email:'a@example.com'}})");
+  d.context.document.getElementById('reportPeriod').value = 'month';
+  d.run('updateReportPeriod()');
+  assert.match(d.nodes.get('reportMonth').value, /^\d{4}-\d{2}$/);
+  d.nodes.get('reportMonth').value = '2026-11';
+  await d.run("exportReport('xlsx')");
+  assert.equal(files[0].type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  assert.match(downloads[0], /^fuloosi-2026-11-.+\.xlsx$/);
+  const workbook = new d.context.ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await files[0].arrayBuffer()));
+  assert.equal(workbook.getWorksheet('العمليات').rowCount, 2);
+
+  d.nodes.get('reportPeriod').value = 'all';
+  await d.run("exportReport('pdf')");
+  assert.equal(files[1].type, 'application/pdf');
+  assert.match(downloads[1], /^fuloosi-all-.+\.pdf$/);
+  assert.deepEqual(renderedPeriods, ['2026-11', 'كل السجل']);
+  assert.equal(syncs, 3);
+
+  d.run('exportData()');
+  assert.match(downloads[2], /^fuloosi-backup-.+\.json$/);
+  const json = JSON.parse(await files[2].text());
+  assert.equal(json.format, 'fuloosi-v4');
+  assert.equal(json.entries.length, 2);
+  await d.run('activate(null)');
+  assert.equal(link.href, undefined);
+});
