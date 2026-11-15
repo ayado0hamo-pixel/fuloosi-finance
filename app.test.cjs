@@ -261,6 +261,51 @@ test('partial receipt and full payment update cash and debt together', async () 
   assert.match(restarted.nodes.get('message').textContent, /مرتبط بتسديد/);
 });
 
+test('debt history shows running balances for each person and currency, including settled debts', async () => {
+  const d = device();
+  const debt = (id, person_id, currency, direction, amount, occurred_on, created_at, note, settlement_account_id) => ({
+    id, person_id, currency, direction, amount, occurred_on, created_at, note, settlement_account_id
+  });
+  d.context.fixture = {
+    accounts: [{ id: 'cash', name: 'كاش أردني', currency: 'JOD', opening_balance: 0 }],
+    debt_people: [{ id: 'ali', name: 'علي' }, { id: 'ibrahim', name: 'إبراهيم' }, { id: 'hakam', name: 'حكم' }],
+    debt_entries: [
+      debt('paid', 'ali', 'JOD', 'i_owe', '0.30', '2026-11-12', '2026-11-12T09:00:01Z', '', 'cash'),
+      debt('usd', 'ali', 'USD', 'i_owe', 7, '2026-11-12', '2026-11-12T08:00:00Z', 'دولار علي'),
+      debt('other', 'ibrahim', 'JOD', 'owed_to_me', 80, '2026-11-12', '2026-11-12T08:00:00Z', 'دين إبراهيم'),
+      debt('later', 'ali', 'JOD', 'owed_to_me', 0.20, '2026-11-12', '2026-11-12T09:00:00Z', 'الحركة الثانية'),
+      debt('earliest', 'ali', 'JOD', 'owed_to_me', 0.10, '2026-11-10', '2026-11-13T09:00:00Z', '<الحركة الأولى>')
+    ]
+  };
+  d.context.mockClient = { async rpc() { return { data: structuredClone(d.context.fixture) }; } };
+  await d.run("client=mockClient;activate({user:{id:'user',email:'test@example.com'}})");
+  assert.match(d.nodes.get('personList').innerHTML, /كشف الحركات/);
+  assert.match(d.nodes.get('debtList').innerHTML, /دين إبراهيم/);
+
+  d.run("showDebtHistory('ali')");
+  const list = d.nodes.get('debtList');
+  assert.doesNotMatch(list.innerHTML, /إبراهيم/);
+  assert.match(list.innerHTML, /دولار علي[\s\S]*?عليك.*7\.00 USD/);
+  d.nodes.get('debtHistoryCurrency').value = 'JOD';
+  d.run('renderDebtHistory()');
+  const rows = list.innerHTML.split('class="item debt-history-row"').slice(1);
+  assert.equal(rows.length, 3);
+  assert.match(rows[0], /استلمت تسديد دين[\s\S]*كاش أردني[\s\S]*مسدّد.*0\.00 JOD/);
+  assert.match(rows[1], /الحركة الثانية[\s\S]*إلك.*0\.30 JOD/);
+  assert.match(rows[2], /&lt;الحركة الأولى&gt;[\s\S]*إلك.*0\.10 JOD/);
+
+  d.context.fixture.debt_entries[3].amount = 0.35;
+  await d.run('reload()');
+  assert.equal(d.nodes.get('debtHistoryPerson').value, 'ali');
+  assert.equal(d.nodes.get('debtHistoryCurrency').value, 'JOD');
+  assert.match(list.innerHTML, /استلمت تسديد دين[\s\S]*?إلك.*0\.15 JOD/);
+  d.run("showDebtHistory('hakam')");
+  assert.match(list.innerHTML, /ماكو حركات بهذا الاختيار/);
+  await d.run('activate(null)');
+  assert.equal(d.nodes.get('debtHistoryPerson').value, '');
+  assert.match(list.innerHTML, /ماكو حركات ديون بعد/);
+});
+
 test('cloud settlement retries use the same ID and refresh the wallet snapshot', async () => {
   const d = device();
   const date = '2026-11-11';

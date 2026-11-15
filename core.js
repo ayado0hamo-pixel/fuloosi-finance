@@ -141,14 +141,30 @@
     return { rows, total_spent_jod, total_budget_jod, total_remaining_jod: total_budget_jod - total_spent_jod };
   }
 
+  const debtEffect = entry => (entry.direction === 'owed_to_me' ? 1 : -1) * money(entry.amount);
+
   function debtNet(personId, entries) {
     const result = Object.fromEntries(currencies.map(c => [c, 0]));
     for (const entry of entries) {
       if (personId !== null && entry.person_id !== personId) continue;
-      result[entry.currency] += (entry.direction === 'owed_to_me' ? 1 : -1) * money(entry.amount);
+      result[entry.currency] += debtEffect(entry);
     }
     for (const currency of currencies) result[currency] /= 1000;
     return result;
+  }
+
+  function debtHistory(entries, personId = '', currency = '') {
+    const rows = entries.filter(entry => (!personId || entry.person_id === personId) && (!currency || entry.currency === currency));
+    rows.sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)
+      || (Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0)
+      || a.id.localeCompare(b.id));
+    const balances = new Map();
+    return rows.map(entry => {
+      const key = `${entry.person_id}:${entry.currency}`;
+      const balance = (balances.get(key) || 0) + debtEffect(entry);
+      balances.set(key, balance);
+      return { entry, balance: balance / 1000 };
+    }).reverse();
   }
 
   function validConfig(url, key) {
@@ -157,7 +173,7 @@
     try { return JSON.parse(atob(key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role === 'anon'; } catch { return false; }
   }
 
-  const api = { money, validate, balance, toJod, monthStats, debtNet, defaultBudgets, validConfig, balanceAdjustmentCategory, isSpending };
+  const api = { money, validate, balance, toJod, monthStats, debtNet, debtHistory, defaultBudgets, validConfig, balanceAdjustmentCategory, isSpending };
   root.FuloosiCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

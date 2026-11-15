@@ -303,6 +303,7 @@ function renderDebts() {
       <div class="item">
         <div><b>${escapeHtml(person.name)}</b><div class="debt-chips">${CURRENCIES.filter(currency => net[currency]).map(currency => `<span class="chip ${net[currency] < 0 ? 'negative' : 'good'}">${net[currency] >= 0 ? 'إلك' : 'عليك'} ${fmt(Math.abs(net[currency]), currency)} ${currency}</span>`).join('') || '<span class="chip">ماكو دين مفتوح</span>'}</div></div>
         <div class="controls">
+          <button onclick="showDebtHistory('${person.id}')">كشف الحركات</button>
           ${CURRENCIES.filter(currency => net[currency]).map(currency => `<button class="primary" onclick="showSettlementForm('${person.id}', '${currency}')">تسديد ${currency}</button>`).join('')}
           <button onclick="showPersonForm('${person.id}')">تعديل الاسم</button><button class="danger" onclick="deletePerson('${person.id}')">حذف</button>
         </div>
@@ -312,28 +313,57 @@ function renderDebts() {
 
   const personSelect = document.getElementById('debtPerson');
   const selected = personSelect.value;
-  personSelect.innerHTML = state.debt_people.map(person => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join('');
+  const options = state.debt_people.map(person => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join('');
+  personSelect.innerHTML = options;
   if (state.debt_people.some(person => person.id === selected)) personSelect.value = selected;
 
-  const rows = [...state.debt_entries].sort((a, b) => String(b.occurred_on).localeCompare(String(a.occurred_on)) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
-  document.getElementById('debtList').innerHTML = rows.length ? '<h3>الحركات</h3>' + rows.map(entry => {
-    const person = state.debt_people.find(row => row.id === entry.person_id);
-    const account = state.accounts.find(row => row.id === entry.settlement_account_id);
+  const personFilter = document.getElementById('debtHistoryPerson');
+  const selectedHistoryPerson = personFilter.value;
+  personFilter.innerHTML = '<option value="">الكل</option>' + options;
+  personFilter.value = state.debt_people.some(person => person.id === selectedHistoryPerson) ? selectedHistoryPerson : '';
+  renderDebtHistory();
+}
+
+function showDebtHistory(personId) {
+  document.getElementById('debtHistoryPerson').value = personId;
+  document.getElementById('debtHistoryCurrency').value = '';
+  renderDebtHistory();
+  const title = document.getElementById('debtHistoryTitle');
+  title.focus?.({ preventScroll: true });
+  title.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+}
+
+function renderDebtHistory() {
+  const personId = document.getElementById('debtHistoryPerson').value;
+  const currency = document.getElementById('debtHistoryCurrency').value;
+  const names = new Map(state.debt_people.map(person => [person.id, person.name]));
+  const accounts = new Map(state.accounts.map(account => [account.id, account.name]));
+  const rows = FuloosiCore.debtHistory(state.debt_entries, personId, currency);
+  document.getElementById('debtList').innerHTML = rows.map(({ entry, balance }) => {
     const settled = Boolean(entry.settlement_account_id);
     const owedToMe = entry.direction === 'owed_to_me';
     const title = settled
       ? (owedToMe ? 'دفعت تسديد دين' : 'استلمت تسديد دين')
       : (owedToMe ? 'هو مدين إلي' : 'أنا مدين إله');
-    const details = [title, account?.name, entry.occurred_on, entry.note].filter(Boolean).map(escapeHtml).join(' · ');
+    const account = accounts.get(entry.settlement_account_id);
+    const balanceClass = balance > 0 ? 'good' : balance < 0 ? 'negative' : 'muted';
+    const balanceLabel = balance > 0 ? 'إلك' : balance < 0 ? 'عليك' : 'مسدّد';
     return `
-      <div class="item">
-        <div><b>${escapeHtml(person?.name || 'اسم محذوف')}</b><br><small>${details}</small></div>
-        <div style="text-align:left"><strong class="amount ${owedToMe ? 'good' : 'negative'}">${owedToMe ? '+' : '−'}${fmt(entry.amount, entry.currency)} ${entry.currency}</strong>
+      <div class="item debt-history-row">
+        <div>
+          <b>${escapeHtml(names.get(entry.person_id) || 'اسم محذوف')}</b>
+          <div>${title}</div>
+          <small><time datetime="${escapeHtml(entry.occurred_on)}" dir="ltr">${escapeHtml(entry.occurred_on)}</time>${account ? ` · ${escapeHtml(account)}` : ''}</small>
+          ${entry.note ? `<div class="muted debt-history-note">${escapeHtml(entry.note)}</div>` : ''}
+        </div>
+        <div class="debt-history-amounts">
+          <strong class="amount ${owedToMe ? 'good' : 'negative'}">${owedToMe ? '+' : '−'}${fmt(entry.amount, entry.currency)} ${entry.currency}</strong>
+          <div class="debt-history-balance"><small>الرصيد بعدها</small> <span class="${balanceClass}">${balanceLabel} <bdi dir="ltr" class="amount">${fmt(Math.abs(balance), entry.currency)} ${entry.currency}</bdi></span></div>
           <div class="controls">${settled ? '' : `<button onclick="editDebtEntry('${entry.id}')">تعديل</button>`}<button class="danger" onclick="deleteDebtEntry('${entry.id}')">${settled ? 'حذف التسديد' : 'حذف'}</button></div>
         </div>
       </div>
     `;
-  }).join('') : '<p class="muted">ماكو حركات ديون بعد.</p>';
+  }).join('') || `<p class="muted">${personId || currency ? 'ماكو حركات بهذا الاختيار.' : 'ماكو حركات ديون بعد.'}</p>`;
 }
 
 function tab(id) {
@@ -940,6 +970,8 @@ function clearForms() {
   hideBudgetForm();
   hidePersonForm();
   hideSettlementForm();
+  document.getElementById('debtHistoryPerson').value = '';
+  document.getElementById('debtHistoryCurrency').value = '';
   clearReportDownload();
   document.getElementById('reportStatus').textContent = '';
   cancelDebtEdit();
@@ -1118,6 +1150,8 @@ Object.assign(window, {
   hideBudgetForm,
   showPersonForm,
   hidePersonForm,
+  showDebtHistory,
+  renderDebtHistory,
   showSettlementForm,
   hideSettlementForm,
   editDebtEntry,

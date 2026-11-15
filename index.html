@@ -37,6 +37,9 @@
     .progress{height:9px;background:#0b1725;border-radius:20px;overflow:hidden;margin-top:10px}.progress>span{display:block;height:100%;background:#19c891;border-radius:20px}
     .progress.over>span{background:#ef767a}.stat-card{border:1px solid #30445e;background:#18263a;border-radius:14px;padding:14px}
     .stat-card .bar{align-items:flex-start}.debt-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{background:#223751;border-radius:20px;padding:5px 9px;font-size:12px}
+    #debtHistoryTitle{scroll-margin-top:16px}.debt-history-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+    .debt-history-row>div{overflow-wrap:anywhere}.debt-history-note,.debt-history-balance{margin-top:4px}
+    .debt-history-amounts{text-align:end}.debt-history-balance small{display:block}.debt-history-amounts .controls{justify-content:flex-end;margin-top:8px}
     hr{border:0;border-top:1px solid #34465b;margin:25px 0}
     @media(max-width:650px){.grid,.grid.two{grid-template-columns:1fr}.wallet-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.tile{padding:10px}.tile strong{font-size:16px}.fields{grid-template-columns:1fr}section{padding:13px}.tabs button{flex:1 1 30%;padding:10px 6px}}
   </style>
@@ -172,7 +175,13 @@
       <div><label>ملاحظة</label><input id="debtNote" maxlength="2000" placeholder="مثلاً حساب المطعم"></div>
     </div>
     <p><button class="primary" onclick="saveDebtEntry()">حفظ الدين</button> <button id="cancelDebtEdit" class="hide" onclick="cancelDebtEdit()">إلغاء التعديل</button></p>
-    <div id="debtList"></div>
+    <hr>
+    <h3 id="debtHistoryTitle" tabindex="-1">كشف حركات الدين</h3>
+    <div class="fields">
+      <div><label for="debtHistoryPerson">الشخص</label><select id="debtHistoryPerson" onchange="renderDebtHistory()"><option value="">الكل</option></select></div>
+      <div><label for="debtHistoryCurrency">العملة</label><select id="debtHistoryCurrency" onchange="renderDebtHistory()"><option value="">كل العملات</option><option>IQD</option><option>JOD</option><option>USD</option></select></div>
+    </div>
+    <div id="debtList" aria-labelledby="debtHistoryTitle" role="region"></div>
   </section>
 
   <section id="entries" class="hide">
@@ -224,8 +233,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js" defer></script>
   <script src="config.js?v=20261111-3" defer></script>
-  <script src="core.js?v=20261111-6" defer></script>
+  <script src="core.js?v=20261115-1" defer></script>
   <script src="reports.js?v=20261111-7" defer></script>
-  <script src="app.js?v=20261111-8" defer></script>
+  <script src="app.js?v=20261115-1" defer></script>
 </body>
 </html>
