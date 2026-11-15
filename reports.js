@@ -12,7 +12,7 @@
   const noteColumn = ['ملاحظة', 32];
   const nameOf = (map, id) => map.get(id)?.name || '';
   const toUsd = (values, rates) => values.USD + values.IQD / rates.iqd_per_usd + values.JOD / rates.jod_per_usd;
-  const table = (name, columns, rows) => ({ name, columns, rows });
+  const table = (name, columns, rows, options = {}) => ({ name, columns, rows, ...options });
   const byDate = (a, b) => b.occurred_on.localeCompare(a.occurred_on);
 
   function build(state, month, today) {
@@ -79,6 +79,44 @@
         debt.currency, nameOf(accountById, debt.settlement_account_id), debt.note];
     });
 
+    const commonTables = [
+      table('ملخص المحفظة', [currencyColumn, ['رصيد المحفظة', 22, 'number'], ['صافي الديون', 22, 'number'], ['الصافي بعد الديون', 24, 'number']], totals),
+      table('الميزانية والمصاريف', [['الشهر', 14], ['التصنيف', 30, 'category'], ['الميزانية JOD', 18, 'number'], ['المصروف JOD', 18, 'number'], ['المتبقي JOD', 18, 'number']], budget),
+      table('الحسابات', [['الحساب', 30], currencyColumn, ['الرصيد الافتتاحي', 22, 'number'], ['الرصيد الحالي', 22, 'number']], balances),
+      table('العمليات', [dateColumn, ['الحساب', 25], ['النوع', 18], ['التصنيف', 23, 'category'], amountColumn, currencyColumn, noteColumn], operations),
+      table('التحويلات', [dateColumn, ['من حساب', 21], ['المبلغ الخارج', 16, 'number'], currencyColumn, ['إلى حساب', 21], ['المبلغ الداخل', 16, 'number'], currencyColumn, noteColumn], transferRows)
+    ];
+
+    const personDebtTables = debt_people.flatMap(person => {
+      const history = core.debtHistory(debt_entries, person.id);
+      const periodHistory = history.filter(({ entry }) => inPeriod(entry));
+      const net = core.debtNet(person.id, debt_entries);
+      const hasOpenDebt = currencies.some(currency => net[currency]);
+      if (!periodHistory.length && !hasOpenDebt) return [];
+
+      const usedCurrencies = currencies.filter(currency =>
+        net[currency] || history.some(({ entry }) => entry.currency === currency));
+      const balanceRows = usedCurrencies.map(currency => [
+        currency,
+        net[currency] > 0 ? 'إلي عنده' : net[currency] < 0 ? 'عليّ إله' : 'مسدّد',
+        Math.abs(net[currency])
+      ]);
+      const movementRows = periodHistory.map(({ entry, balance }) => {
+        const owedToMe = entry.direction === 'owed_to_me';
+        const type = entry.settlement_account_id
+          ? (owedToMe ? 'دفعت تسديد' : 'استلمت تسديد')
+          : (owedToMe ? 'إلي عنده' : 'عليّ إله');
+        return [entry.occurred_on, type, (owedToMe ? 1 : -1) * Number(entry.amount),
+          entry.currency, balance, nameOf(accountById, entry.settlement_account_id), entry.note];
+      });
+
+      return [
+        table(`دين ${person.name} — الرصيد الحالي`, [currencyColumn, ['الحالة', 24], ['المبلغ', 24, 'number']], balanceRows, { pageBreakBefore: true }),
+        table(`دين ${person.name} — الحركات`, [dateColumn, ['النوع', 19], ['مبلغ الحركة', 17, 'number'], currencyColumn,
+          ['الرصيد بعدها', 19, 'number'], ['حساب التسديد', 22], noteColumn], movementRows)
+      ];
+    });
+
     return {
       title: 'تقرير فلوسي',
       period: month || 'كل السجل',
@@ -86,14 +124,11 @@
       rates: `1 USD = ${settings.iqd_per_usd} IQD = ${settings.jod_per_usd} JOD`,
       context: 'الأرصدة الحالية وقت التصدير، والحركات حسب الفترة المختارة. الميزانية وأسعار الصرف حسب الإعدادات الحالية.',
       tables: [
-        table('ملخص المحفظة', [currencyColumn, ['رصيد المحفظة', 22, 'number'], ['صافي الديون', 22, 'number'], ['الصافي بعد الديون', 24, 'number']], totals),
-        table('الميزانية والمصاريف', [['الشهر', 14], ['التصنيف', 30, 'category'], ['الميزانية JOD', 18, 'number'], ['المصروف JOD', 18, 'number'], ['المتبقي JOD', 18, 'number']], budget),
-        table('الحسابات', [['الحساب', 30], currencyColumn, ['الرصيد الافتتاحي', 22, 'number'], ['الرصيد الحالي', 22, 'number']], balances),
-        table('العمليات', [dateColumn, ['الحساب', 25], ['النوع', 18], ['التصنيف', 23, 'category'], amountColumn, currencyColumn, noteColumn], operations),
-        table('التحويلات', [dateColumn, ['من حساب', 21], ['المبلغ الخارج', 16, 'number'], currencyColumn, ['إلى حساب', 21], ['المبلغ الداخل', 16, 'number'], currencyColumn, noteColumn], transferRows),
+        ...commonTables,
         table('أرصدة الديون', [['الشخص', 30], currencyColumn, ['الصافي الحالي (إلي موجب)', 28, 'number']], people),
         table('حركات الديون', [dateColumn, ['الشخص', 24], ['النوع', 21], ['أثر الحركة على الدين', 22, 'number'], currencyColumn, ['حساب التسديد', 24], noteColumn], debts)
-      ]
+      ],
+      pdfTables: [...commonTables, ...personDebtTables]
     };
   }
 
@@ -216,7 +251,7 @@
     }
 
     startPage();
-    for (const section of report.tables) {
+    for (const section of report.pdfTables || report.tables) {
       const weights = section.columns.reduce((sum, [, weight]) => sum + weight, 0);
       const widths = section.columns.map(([, weight]) => (width - 2 * margin) * weight / weights);
       const rights = widths.map((_, index) => width - margin - widths.slice(0, index).reduce((sum, w) => sum + w, 0));
@@ -234,7 +269,7 @@
         }));
         y += headerHeight;
       }
-      if (y + 120 > bottom) {
+      if ((section.pageBreakBefore && y > 158) || y + 120 > bottom) {
         await savePage();
         startPage();
       }

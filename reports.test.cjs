@@ -53,6 +53,34 @@ test('all history and empty months produce valid reports', () => {
   assert.throws(() => reports.build(state, '2026-13', today), /اختار شهر صالح/);
 });
 
+test('PDF groups every person into a separate balance and movement section with running balances', () => {
+  const source = structuredClone(state);
+  source.debt_people.push({ id: 'a', name: 'علي' });
+  source.debt_entries.push(
+    { id: 'a1', person_id: 'a', direction: 'owed_to_me', amount: 3, currency: 'JOD', note: 'أول حركة', occurred_on: '2026-11-05', created_at: '2026-11-05T08:00:00Z' },
+    { id: 'a2', person_id: 'a', direction: 'i_owe', amount: 3, currency: 'JOD', settlement_account_id: 'j', note: '', occurred_on: '2026-11-06', created_at: '2026-11-06T08:00:00Z' }
+  );
+  const report = reports.build(source, '', today);
+  const debtSections = report.pdfTables.filter(section => section.name.startsWith('دين '));
+  assert.deepEqual(debtSections.map(section => section.name), [
+    'دين محمود — الرصيد الحالي', 'دين محمود — الحركات',
+    'دين علي — الرصيد الحالي', 'دين علي — الحركات'
+  ]);
+  assert.equal(debtSections[0].pageBreakBefore, true);
+  assert.equal(debtSections[1].pageBreakBefore, undefined);
+  assert.equal(debtSections[2].pageBreakBefore, true);
+  assert.deepEqual(debtSections[0].rows, [['JOD', 'إلي عنده', 6]]);
+  assert.deepEqual(debtSections[1].rows.map(row => [row[0], row[2], row[4]]), [
+    ['2026-11-04', -4, 6], ['2026-10-10', 10, 10]
+  ]);
+  assert.deepEqual(debtSections[2].rows, [['JOD', 'مسدّد', 0]]);
+  assert.deepEqual(debtSections[3].rows.map(row => [row[0], row[2], row[4]]), [
+    ['2026-11-06', -3, 0], ['2026-11-05', 3, 3]
+  ]);
+  assert.equal(report.pdfTables.some(section => section.name === 'حركات الديون'), false);
+  assert.equal(report.tables.some(section => section.name === 'حركات الديون'), true);
+});
+
 test('Excel download reopens with seven RTL sheets, typed dates and numbers, and literal notes', async () => {
   const report = reports.build(state, '2026-11', today);
   const bytes = await reports.excel(report, ExcelJS);
