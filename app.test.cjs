@@ -430,3 +430,29 @@ test('wallet and after-debt totals show the Iraqi dinar equivalent at the saved 
   assert.equal(d.nodes.get('totalIqd').textContent, '≈ 18,913.5 IQD');
   assert.equal(d.nodes.get('totalAfterDebtsIqd').textContent, '≈ -1,486.5 IQD');
 });
+
+test('unlinked spending counts in reports without changing a wallet balance', async () => {
+  const d = device();
+  await d.run("insertRow('accounts',{id:'11111111-1111-4111-8111-111111111111',name:'JKB',currency:'JOD',opening_balance:100})");
+  d.run('render()');
+  d.nodes.get('entryAccount').value = '';
+  d.run('updateEntryAccount()');
+  d.context.document.getElementById('entryCurrency').value = 'USD';
+  d.context.document.getElementById('amount').value = '10';
+  d.context.document.getElementById('category').value = '🍔 أكل وشرب';
+  d.context.document.getElementById('date').value = '2026-11-20';
+  await d.run('saveEntry()');
+  assert.equal(d.run('state.entries[0].account_id'), null);
+  assert.equal(d.run('state.entries[0].currency'), 'USD');
+  assert.equal(d.run('bal(state.accounts[0])'), 100);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-11').total_spent_jod"), 7.09);
+  assert.match(d.nodes.get('entryList').innerHTML, /بدون حساب/);
+  assert.match(d.nodes.get('entryList').innerHTML, /USD/);
+  d.run('editEntry(state.entries[0].id)');
+  d.nodes.get('entryAccount').value = d.run('state.accounts[0].id');
+  d.run('updateEntryAccount()');
+  await d.run('saveEntry()');
+  assert.equal(d.run('state.entries[0].currency'), 'JOD');
+  assert.equal(d.run('bal(state.accounts[0])'), 90);
+});
+

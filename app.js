@@ -181,8 +181,23 @@ function renderCategories() {
 
   const accountSelect = document.getElementById('entryAccount');
   const selectedAccount = accountSelect.value;
-  accountSelect.innerHTML = state.accounts.map(account => `<option value="${account.id}">${escapeHtml(account.name)} — ${account.currency} (${fmt(bal(account), account.currency)})</option>`).join('');
+  const hadOptions = Boolean(accountSelect.innerHTML);
+  accountSelect.innerHTML = state.accounts.map(account => `<option value="${account.id}">${escapeHtml(account.name)} — ${account.currency} (${fmt(bal(account), account.currency)})</option>`).join('') + '<option value="">بدون حساب (مصروف فقط)</option>';
   if (state.accounts.some(account => account.id === selectedAccount)) accountSelect.value = selectedAccount;
+  else if (hadOptions && !selectedAccount) accountSelect.value = '';
+  updateEntryAccount();
+}
+
+function updateEntryAccount() {
+  const account = state.accounts.find(row => row.id === document.getElementById('entryAccount').value);
+  const withoutAccount = !account;
+  document.getElementById('entryCurrencyField').classList.toggle('hide', !withoutAccount);
+  document.getElementById('entryAmountLabel').textContent = withoutAccount ? 'المبلغ بعملة المصروف' : 'المبلغ بعملة الحساب';
+  document.getElementById('saveEntryButton').textContent = withoutAccount ? 'حفظ المصروف بدون تعديل الأرصدة' : 'حفظ العملية وتحديث الرصيد';
+  const kind = document.getElementById('kind');
+  if (withoutAccount) kind.value = 'expense';
+  for (const option of kind.options || []) option.disabled = withoutAccount && option.value !== 'expense';
+  document.getElementById('entryAccountHint').classList.toggle('hide', !withoutAccount);
 }
 
 function renderEntries() {
@@ -203,16 +218,17 @@ function renderEntries() {
     .sort((a, b) => String(b.occurred_on).localeCompare(String(a.occurred_on)) || String(b.created_at || '').localeCompare(String(a.created_at || '')))
     .filter(entry => {
       const account = state.accounts.find(row => row.id === entry.account_id);
-      return account && (!currency || account.currency === currency) && (!query || [account.name, entry.category, entry.note].join(' ').toLowerCase().includes(query));
+      const entryCurrency = entry.currency ?? account?.currency;
+      return entryCurrency && (!currency || entryCurrency === currency) && (!query || [account?.name || 'بدون حساب', entry.category, entry.note].join(' ').toLowerCase().includes(query));
     });
 
   document.getElementById('entryList').innerHTML = rows.length ? rows.map(entry => {
     const account = state.accounts.find(row => row.id === entry.account_id);
     return `
       <div class="item">
-        <div><b>${escapeHtml(entry.category)}</b><br><small>${escapeHtml(account.name)} · ${escapeHtml(entry.occurred_on)} · ${escapeHtml(entry.note || '')}</small></div>
+        <div><b>${escapeHtml(entry.category)}</b><br><small>${escapeHtml(account?.name || 'بدون حساب')} · ${escapeHtml(entry.occurred_on)} · ${escapeHtml(entry.note || '')}</small></div>
         <div style="text-align:left">
-          <strong class="amount ${entry.kind === 'expense' ? 'negative' : 'good'}">${entry.kind === 'expense' ? '−' : '+'}${fmt(entry.amount, account.currency)} ${account.currency}</strong>
+          <strong class="amount ${entry.kind === 'expense' ? 'negative' : 'good'}">${entry.kind === 'expense' ? '−' : '+'}${fmt(entry.amount, entry.currency ?? account?.currency)} ${entry.currency ?? account?.currency}</strong>
           <div class="controls">${entry.settlement_account_id
             ? `<button class="danger" onclick="deleteDebtEntry('${entry.id}')">حذف التسديد</button>`
             : `<button onclick="editEntry('${entry.id}')">تعديل</button><button class="danger" onclick="deleteEntry('${entry.id}')">حذف</button>`}</div>
@@ -222,7 +238,7 @@ function renderEntries() {
   }).join('') : '<p class="muted">ماكو عمليات مسجلة بعد.</p>';
 
   document.getElementById('expenseSummary').textContent = 'مصاريف اليوم: ' + CURRENCIES.map(code => {
-    const total = state.entries.filter(entry => FuloosiCore.isSpending(entry) && entry.occurred_on === today() && state.accounts.find(account => account.id === entry.account_id)?.currency === code).reduce((sum, entry) => sum + num(entry.amount), 0);
+    const total = state.entries.filter(entry => FuloosiCore.isSpending(entry) && entry.occurred_on === today() && (entry.currency ?? state.accounts.find(account => account.id === entry.account_id)?.currency) === code).reduce((sum, entry) => sum + num(entry.amount), 0);
     return fmt(total, code) + ' ' + code;
   }).join(' | ');
 }
@@ -530,7 +546,9 @@ async function deleteAccount(id) {
 }
 
 async function saveEntry() {
-  const account_id = document.getElementById('entryAccount').value;
+  const account_id = document.getElementById('entryAccount').value || null;
+  const account = state.accounts.find(row => row.id === account_id);
+  const currency = account?.currency || document.getElementById('entryCurrency').value;
   const amount = Number(document.getElementById('amount').value);
   const selectedKind = document.getElementById('kind').value;
   const isDecrease = selectedKind === 'adjustment_decrease';
@@ -539,8 +557,8 @@ async function saveEntry() {
   const category = isDecrease ? FuloosiCore.balanceAdjustmentCategory : selectedCategory;
   const note = document.getElementById('note').value.trim();
   const occurred_on = document.getElementById('date').value;
-  if (!state.accounts.some(account => account.id === account_id) || !Number.isFinite(amount) || amount <= 0 || !occurred_on) throw Error('تأكد من الحساب والمبلغ والتاريخ');
-  const object = { id: entryEditId || uid(), account_id, amount, kind, category, note, occurred_on, created_at: entryEditId ? entryDraft.created_at : new Date().toISOString() };
+  if ((account_id && !account) || !CURRENCIES.includes(currency) || (!account && kind !== 'expense') || !Number.isFinite(amount) || amount <= 0 || !occurred_on) throw Error('تأكد من الحساب أو العملة والمبلغ والتاريخ');
+  const object = { id: entryEditId || uid(), account_id, currency, amount, kind, category, note, occurred_on, created_at: entryEditId ? entryDraft.created_at : new Date().toISOString() };
   if (entryEditId) await updateRow('entries', entryEditId, object, entryRevision);
   else await insertRow('entries', object);
   entryEditId = null;
@@ -560,7 +578,9 @@ function editEntry(id) {
   entryDraft = structuredClone(entry);
   tab('add');
   renderCategories();
-  document.getElementById('entryAccount').value = entry.account_id;
+  document.getElementById('entryAccount').value = entry.account_id || '';
+  document.getElementById('entryCurrency').value = entry.currency ?? state.accounts.find(account => account.id === entry.account_id)?.currency ?? 'JOD';
+  updateEntryAccount();
   document.getElementById('kind').value = entry.kind === 'expense' && !FuloosiCore.isSpending(entry) ? 'adjustment_decrease' : entry.kind;
   document.getElementById('category').value = entry.category;
   document.getElementById('date').value = entry.occurred_on;
@@ -569,8 +589,8 @@ function editEntry(id) {
 }
 
 async function deleteEntry(id) {
-  if (!confirm('تحذف العملية؟ راح يرجع تأثيرها من الرصيد.')) return;
   const entry = state.entries.find(row => row.id === id);
+  if (!entry || !confirm(entry.account_id ? 'تحذف العملية؟ راح يرجع تأثيرها من الرصيد.' : 'تحذف المصروف من السجل والإحصائيات؟')) return;
   await removeRow('entries', id, entry.revision);
   await reload();
 }
@@ -1144,6 +1164,7 @@ Object.assign(window, {
   showBalanceForm,
   hideBalanceForm,
   editEntry,
+  updateEntryAccount,
   renderEntries,
   renderStats,
   showBudgetForm,
@@ -1161,6 +1182,8 @@ Object.assign(window, {
   exportData,
   importData
 });
+
+document.getElementById('kind').addEventListener('change', updateEntryAccount);
 
 for (const id of ['iqdRate', 'jodRate', 'monthlyBudget']) {
   document.getElementById(id).addEventListener('input', () => {
@@ -1204,3 +1227,4 @@ setInterval(() => { if (cloud && !document.hidden && !busy) reload().catch(error
     msg(error.message);
   }
 })();
+

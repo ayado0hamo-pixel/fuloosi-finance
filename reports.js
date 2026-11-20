@@ -58,8 +58,8 @@
     const operations = periodEntries.map(entry => {
       const type = entry.category === core.balanceAdjustmentCategory ? 'تسوية رصيد'
         : { expense: 'مصروف', income: 'دخل', adjustment: 'تعديل رصيد' }[entry.kind];
-      return [entry.occurred_on, nameOf(accountById, entry.account_id), type, entry.category,
-        (entry.kind === 'expense' ? -1 : 1) * Number(entry.amount), accountById.get(entry.account_id)?.currency || '', entry.note];
+      return [entry.occurred_on, entry.account_id ? nameOf(accountById, entry.account_id) : 'بدون حساب', type, entry.category,
+        (entry.kind === 'expense' ? -1 : 1) * Number(entry.amount), entry.currency ?? accountById.get(entry.account_id)?.currency ?? '', entry.note];
     });
     const transferRows = periodTransfers.map(transfer => [
       transfer.occurred_on, nameOf(accountById, transfer.from_account_id), Number(transfer.from_amount),
@@ -321,3 +321,4 @@
   if (typeof module !== 'undefined') module.exports = api;
   else root.FuloosiReports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
+

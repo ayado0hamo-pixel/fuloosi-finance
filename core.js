@@ -47,10 +47,13 @@
     if (new Set(accounts.map(a => a.currency + '\0' + a.name)).size !== accounts.length) throw Error('يوجد حساب مكرر');
 
     const entries = x.entries.map(e => {
-      if (!uuid.test(e.id) || eids.has(e.id) || !ids.has(e.account_id) || !['expense', 'income', 'adjustment'].includes(e.kind) || money(e.amount) <= 0 || !validDate(e.occurred_on)) throw Error('بيانات العملية غير صالحة');
+      if (!uuid.test(e.id) || eids.has(e.id) || (e.account_id != null && !ids.has(e.account_id)) || !['expense', 'income', 'adjustment'].includes(e.kind) || money(e.amount) <= 0 || !validDate(e.occurred_on)) throw Error('بيانات العملية غير صالحة');
       if (typeof e.category !== 'string' || !e.category.trim() || e.category.length > 200 || typeof e.note !== 'string' || e.note.length > 2000) throw Error('الوصف غير صالح');
+      const account = accounts.find(a => a.id === e.account_id);
+      const currency = e.currency ?? account?.currency;
+      if (!currencies.includes(currency) || (account && account.currency !== currency) || (!account && !isSpending(e))) throw Error('حساب العملية أو عملتها غير صالح');
       eids.add(e.id);
-      return { id: e.id, account_id: e.account_id, kind: e.kind, amount: Number(e.amount), category: e.category.trim(), note: e.note, occurred_on: e.occurred_on, created_at: e.created_at || new Date().toISOString() };
+      return { id: e.id, account_id: e.account_id ?? null, currency, kind: e.kind, amount: Number(e.amount), category: e.category.trim(), note: e.note, occurred_on: e.occurred_on, created_at: e.created_at || new Date().toISOString() };
     });
 
     const budgetSource = Array.isArray(x.budgets) ? x.budgets : defaultBudgets();
@@ -127,8 +130,9 @@
     for (const entry of state.entries) {
       if (!isSpending(entry) || !String(entry.occurred_on).startsWith(month + '-')) continue;
       const account = state.accounts.find(a => a.id === entry.account_id);
-      if (!account) continue;
-      spent[entry.category] = (spent[entry.category] || 0) + toJod(entry.amount, account.currency, state.settings);
+      const currency = entry.currency ?? account?.currency;
+      if (!currencies.includes(currency)) continue;
+      spent[entry.category] = (spent[entry.category] || 0) + toJod(entry.amount, currency, state.settings);
     }
     const categories = new Set([...(state.budgets || []).map(b => b.category), ...Object.keys(spent)]);
     const rows = [...categories].map(category => {
@@ -177,3 +181,4 @@
   root.FuloosiCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
+
