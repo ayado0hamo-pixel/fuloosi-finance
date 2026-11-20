@@ -45,6 +45,7 @@ let balanceDraft = null;
 let entryEditId = null;
 let entryRevision = null;
 let entryDraft = null;
+let entryAccountInitialized = false;
 let budgetEditCategory = null;
 let budgetRevision = null;
 let personEditId = null;
@@ -181,10 +182,13 @@ function renderCategories() {
 
   const accountSelect = document.getElementById('entryAccount');
   const selectedAccount = accountSelect.value;
-  const hadOptions = Boolean(accountSelect.innerHTML);
   accountSelect.innerHTML = state.accounts.map(account => `<option value="${account.id}">${escapeHtml(account.name)} — ${account.currency} (${fmt(bal(account), account.currency)})</option>`).join('') + '<option value="">بدون حساب (مصروف فقط)</option>';
-  if (state.accounts.some(account => account.id === selectedAccount)) accountSelect.value = selectedAccount;
-  else if (hadOptions && !selectedAccount) accountSelect.value = '';
+  if (!entryAccountInitialized && state.accounts.length) {
+    accountSelect.value = state.accounts[0].id;
+    entryAccountInitialized = true;
+  } else if (state.accounts.some(account => account.id === selectedAccount) || !selectedAccount) {
+    accountSelect.value = selectedAccount;
+  }
   updateEntryAccount();
 }
 
@@ -978,6 +982,7 @@ function msg(text) {
 }
 
 function clearForms() {
+  entryAccountInitialized = false;
   settingsDirty = false;
   settingsRevision = null;
   accountEditId = null;

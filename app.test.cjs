@@ -435,6 +435,7 @@ test('unlinked spending counts in reports without changing a wallet balance', as
   const d = device();
   await d.run("insertRow('accounts',{id:'11111111-1111-4111-8111-111111111111',name:'JKB',currency:'JOD',opening_balance:100})");
   d.run('render()');
+  assert.equal(d.nodes.get('entryAccount').value, d.run('state.accounts[0].id'));
   d.nodes.get('entryAccount').value = '';
   d.run('updateEntryAccount()');
   d.context.document.getElementById('entryCurrency').value = 'USD';
