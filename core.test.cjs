@@ -40,6 +40,25 @@ test('monthly statistics convert every currency to JOD and calculate remaining b
  assert.equal(stats.rows[0].remaining_jod,90);
  assert.equal(core.toJod(10,'USD',x.settings),7.09);
 });
+test('transfer or deposit entries stay out of spending totals and category statistics',()=>{
+ const x=data();
+ x.settings.monthly_budget_jod=600;
+ x.budgets=[
+  {category:'food',monthly_limit_jod:100},
+  {category:'💰 تحويل أو إيداع',monthly_limit_jod:0}
+ ];
+ x.entries=[
+  {...e,amount:10,occurred_on:'2026-11-10'},
+  {...e,id:'33333333-3333-4333-8333-333333333333',amount:150.396,category:'💰 تحويل أو إيداع',occurred_on:'2026-11-11'},
+  {...e,id:'44444444-4444-4444-8444-444444444444',amount:50,category:'تحويل أو إيداع',occurred_on:'2026-11-12'}
+ ];
+ const stats=core.monthStats(x,'2026-11');
+ assert.equal(stats.total_spent_jod,10);
+ assert.equal(stats.total_remaining_jod,590);
+ assert.deepEqual(stats.rows.map(row=>row.category),['food']);
+ assert.equal(core.isSpending(x.entries[1]),false);
+ assert.equal(core.isSpending(x.entries[2]),false);
+});
 test('debt ledger keeps separate signed totals by currency',()=>{
  const person='33333333-3333-4333-8333-333333333333';
  const rows=[

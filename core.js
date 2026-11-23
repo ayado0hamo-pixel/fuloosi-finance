@@ -5,9 +5,15 @@
   const directions = ['owed_to_me', 'i_owe'];
   const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
   const balanceAdjustmentCategory = 'تسوية رصيد';
+  const transferDepositCategory = 'تحويل أو إيداع';
 
   // The existing ledger represents every debit with kind 'expense'.
-  const isSpending = entry => entry.kind === 'expense' && entry.category !== balanceAdjustmentCategory;
+  const normalizedCategory = value => String(value ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  const isNonSpendingCategory = category => {
+    const normalized = normalizedCategory(category);
+    return normalized === balanceAdjustmentCategory || normalized === transferDepositCategory;
+  };
+  const isSpending = entry => entry.kind === 'expense' && !isNonSpendingCategory(entry.category);
 
   function money(value) {
     const n = Number(value);
@@ -134,7 +140,10 @@
       if (!currencies.includes(currency)) continue;
       spent[entry.category] = (spent[entry.category] || 0) + toJod(entry.amount, currency, state.settings);
     }
-    const categories = new Set([...(state.budgets || []).map(b => b.category), ...Object.keys(spent)]);
+    const categories = new Set([
+      ...(state.budgets || []).map(b => b.category).filter(category => !isNonSpendingCategory(category)),
+      ...Object.keys(spent)
+    ]);
     const rows = [...categories].map(category => {
       const limit = Number((state.budgets || []).find(b => b.category === category)?.monthly_limit_jod || 0);
       const used = spent[category] || 0;
