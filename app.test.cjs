@@ -14,6 +14,110 @@ test('new installs are empty; local expense and balance survive restart',async()
  assert.equal(d.run('bal(state.accounts[0])'),42.75);
  const restarted=device(d.storage);assert.equal(restarted.run('bal(state.accounts[0])'),42.75);
 });
+
+test('editing an old dated linked expense replaces it once and recalculates balances and monthly stats', async () => {
+  const d = device();
+  const field = id => d.context.document.getElementById(id);
+  await d.run("insertRow('accounts',{id:'11111111-1111-4111-8111-111111111111',name:'Iraqi cash',currency:'IQD',opening_balance:100000})");
+  d.run('render()');
+  field('entryAccount').value = d.run('state.accounts[0].id');
+  d.run('updateEntryAccount()');
+  field('amount').value = '8.6';
+  field('kind').value = 'expense';
+  field('category').value = '🍔 أكل وشرب';
+  field('date').value = '2026-10-05';
+  await d.run('saveEntry()');
+
+  assert.equal(d.run('state.entries.length'), 1);
+  assert.equal(d.run('bal(state.accounts[0])'), 99991.4);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-10').total_spent_jod"), 8.6 / 1679 * 0.709);
+
+  d.run('editEntry(state.entries[0].id)');
+  field('amount').value = '10.25';
+  field('date').value = '2026-11-23';
+  field('category').value = '🏃🏻 طلعات';
+  await d.run('saveEntry()');
+
+  assert.equal(d.run('state.entries.length'), 1);
+  assert.equal(d.run('state.entries[0].amount'), 10.25);
+  assert.equal(d.run('state.entries[0].occurred_on'), '2026-11-23');
+  assert.equal(d.run('bal(state.accounts[0])'), 99989.75);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-10').total_spent_jod"), 0);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-11').total_spent_jod"), 10.25 / 1679 * 0.709);
+  assert.equal(device(d.storage).run('state.entries.length'), 1);
+});
+
+test('editing an old dated unlinked expense never changes wallet balances or duplicates the row', async () => {
+  const d = device();
+  const field = id => d.context.document.getElementById(id);
+  await d.run("insertRow('accounts',{id:'11111111-1111-4111-8111-111111111111',name:'JKB',currency:'JOD',opening_balance:50})");
+  d.run('render()');
+  field('entryAccount').value = '';
+  d.run('updateEntryAccount()');
+  field('entryCurrency').value = 'JOD';
+  field('amount').value = '8.6';
+  field('category').value = '🏃🏻 طلعات';
+  field('date').value = '2026-10-05';
+  await d.run('saveEntry()');
+
+  const id = d.run('state.entries[0].id');
+  assert.equal(d.run('bal(state.accounts[0])'), 50);
+  d.run('editEntry(state.entries[0].id)');
+  field('date').value = '2026-11-23';
+  await d.run('saveEntry()');
+
+  assert.equal(d.run('state.entries.length'), 1);
+  assert.equal(d.run('state.entries[0].id'), id);
+  assert.equal(d.run('state.entries[0].account_id'), null);
+  assert.equal(d.run('bal(state.accounts[0])'), 50);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-10').total_spent_jod"), 0);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-11').total_spent_jod"), 8.6);
+});
+
+test('cloud edit of an old dated expense updates the same revisioned row and reloads the new balance', async () => {
+  const d = device();
+  const field = id => d.context.document.getElementById(id);
+  const snapshot = {
+    accounts: [{ id: 'account', name: 'Cash', currency: 'JOD', opening_balance: 100, revision: 1 }],
+    entries: [{
+      id: 'entry', account_id: 'account', currency: 'JOD', kind: 'expense', amount: 8.6,
+      category: '🏃🏻 طلعات', note: '', occurred_on: '2026-10-05',
+      created_at: '2026-11-23T02:49:54.605Z', revision: 1
+    }]
+  };
+  let updates = 0;
+  d.context.mockClient = {
+    async rpc() { return { data: structuredClone(snapshot), error: null }; },
+    from(table) {
+      assert.equal(table, 'entries');
+      let next;
+      const filters = [];
+      return {
+        update(object) { next = object; return this; },
+        eq(column, value) { filters.push([column, value]); return this; },
+        async select() {
+          assert.deepEqual(filters, [['id', 'entry'], ['revision', 1]]);
+          snapshot.entries[0] = { ...snapshot.entries[0], ...next, revision: 2 };
+          updates++;
+          return { data: [{ id: 'entry' }], error: null };
+        }
+      };
+    }
+  };
+
+  await d.run("client=mockClient;activate({user:{id:'user',email:'test@example.com'}})");
+  d.run('editEntry(state.entries[0].id)');
+  field('amount').value = '10.25';
+  field('date').value = '2026-11-23';
+  await d.run('saveEntry()');
+
+  assert.equal(updates, 1);
+  assert.equal(d.run('state.entries.length'), 1);
+  assert.equal(d.run('state.entries[0].revision'), 2);
+  assert.equal(d.run('bal(state.accounts[0])'), 89.75);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-10').total_spent_jod"), 0);
+  assert.equal(d.run("FuloosiCore.monthStats(state,'2026-11').total_spent_jod"), 10.25);
+});
 test('corrupt local data is preserved; another tab cannot silently overwrite',async()=>{
  const storage=new Map([['fuloosi-v3','broken original']]);const bad=device(storage);await assert.rejects(bad.run("insertRow('accounts',{id:'x'})"));assert.equal(storage.get('fuloosi-v3'),'broken original');
  const d=device();d.storage.set('fuloosi-v3','changed elsewhere');await assert.rejects(d.run("insertRow('accounts',{id:'x'})"));assert.equal(d.storage.get('fuloosi-v3'),'changed elsewhere');
