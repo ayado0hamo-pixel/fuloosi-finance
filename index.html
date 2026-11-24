@@ -225,7 +225,7 @@
     <div id="authBox" class="hide">
       <label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="username">
       <label>كلمة مرور الحساب</label><input id="password" type="password" minlength="12" autocomplete="current-password">
-      <p><button onclick="signUp()">إنشاء حساب</button> <button class="primary" onclick="signIn()">تسجيل الدخول</button> <button onclick="signOut()">خروج</button> <button onclick="resetPassword()">نسيت كلمة المرور</button> <button id="recoverButton" class="hide" onclick="updatePassword()">حفظ كلمة المرور الجديدة</button></p>
+      <p><button onclick="signUp()">إنشاء حساب</button> <button class="primary" onclick="signIn()">تسجيل الدخول</button> <button onclick="signOut()">خروج</button> <button onclick="resetPassword()">نسيت كلمة المرور</button> <button id="recoverButton" class="hide" onclick="updatePassword()">تغيير كلمة المرور</button></p>
       <p><button onclick="migrateLocal()">رفع بياناتي المحلية إلى السحابة (مرة واحدة)</button></p>
       <small>بعد تسجيل الدخول تُعرض بيانات السحابة فقط. الرفع يضيف السجلات الناقصة فقط ويوقف العملية بالكامل عند وجود تعارض. لا يغيّر البيانات السحابية الموجودة.</small>
     </div>
@@ -236,6 +236,6 @@
   <script src="config.js?v=20261111-3" defer></script>
   <script src="core.js?v=20261123-1" defer></script>
   <script src="reports.js?v=20261120-1" defer></script>
-  <script src="app.js?v=20261124-1" defer></script>
+  <script src="app.js?v=20261124-2" defer></script>
 </body>
 </html>
