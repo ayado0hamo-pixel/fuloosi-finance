@@ -1045,7 +1045,7 @@ async function connectCloud() {
   }
   localStorage.setItem('fuloosi-cloud-config', JSON.stringify({ url, key }));
   client = window.supabase.createClient(url, key, {
-    auth: { storageKey: 'fuloosi-auth-' + new URL(url).hostname, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' }
+    auth: { storageKey: 'fuloosi-auth-' + new URL(url).hostname, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' }
   });
   document.getElementById('authBox').classList.remove('hide');
   authSubscription = client.auth.onAuthStateChange((event, session) => {
@@ -1094,9 +1094,9 @@ async function signOut() {
 
 async function resetPassword() {
   if (!client) throw Error('اربط المشروع أولاً');
-  const { error } = await client.auth.resetPasswordForEmail(credentials().email, { redirectTo: location.origin + location.pathname });
+  const { error } = await client.auth.resetPasswordForEmail(credentials().email, { redirectTo: new URL('reset-password.html', location.href).href });
   if (error) throw error;
-  msg('إذا كان البريد مسجلاً، سيصله رابط استعادة كلمة المرور. افتح الرابط في نفس المتصفح.');
+  msg('إذا كان البريد مسجلاً، سيصله رابط يفتح صفحة مستقلة لتعيين كلمة مرور جديدة.');
 }
 
 async function updatePassword() {
@@ -1232,4 +1232,3 @@ setInterval(() => { if (cloud && !document.hidden && !busy) reload().catch(error
     msg(error.message);
   }
 })();
-
