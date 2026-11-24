@@ -1027,6 +1027,8 @@ async function activate(session) {
   cloud = Boolean(session);
   cloudReady = false;
   clearForms();
+  if (currentUser?.email) document.getElementById('email').value = currentUser.email;
+  document.getElementById('recoverButton').classList.toggle('hide', !currentUser);
   state = cloud || needsLogin() ? initial() : local;
   render();
   document.getElementById('status').textContent = cloud ? 'جارٍ تحميل بيانات حسابك' : needsLogin() ? 'سجل الدخول لحفظ بياناتك' : 'محلي على هذا الجهاز';
@@ -1094,7 +1096,9 @@ async function signOut() {
 
 async function resetPassword() {
   if (!client) throw Error('اربط المشروع أولاً');
-  const { error } = await client.auth.resetPasswordForEmail(credentials().email, { redirectTo: new URL('reset-password.html', location.href).href });
+  const email = credentials().email || currentUser?.email || '';
+  if (!email) throw Error('اكتب البريد الإلكتروني أولاً');
+  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: new URL('reset-password.html', location.href).href });
   if (error) throw error;
   msg('إذا كان البريد مسجلاً، سيصله رابط يفتح صفحة مستقلة لتعيين كلمة مرور جديدة.');
 }
